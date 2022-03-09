@@ -75,8 +75,9 @@ void setRow(uint8_t rowIdx){
 void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
-  vTaskDelayUntil( &xLastWakeTime, xFrequency );
+
   while (true) {
+    vTaskDelayUntil( &xLastWakeTime, xFrequency );
     int32_t localCurrentStepSize = 0;
 
     for (int i = 0; i < 3; i++) {
@@ -114,6 +115,59 @@ void scanKeysTask(void * pvParameters) {
 
       __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
   }
+}
+
+void displayUpdateTask(void * pvParameters){
+  const TickType_t xFrequency = 100/portTICK_PERIOD_MS;
+  TickType_t xLastWakeTime= xTaskGetTickCount();
+  String keyString;
+  while (true) {
+    vTaskDelayUntil( &xLastWakeTime, xFrequency );
+    if (keyArray[0] == 0x0E && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
+        keyString = noteNames[0];
+      } else if(keyArray[0] == 0x0D && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
+        keyString = noteNames[1];
+      } else if (keyArray[0] == 0x0B && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
+        keyString = noteNames[2];
+      } else if (keyArray[0] == 0x07 && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
+        keyString = noteNames[3];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0E && keyArray[2] == 0x0F){
+        keyString = noteNames[4];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0D && keyArray[2] == 0x0F){
+        keyString = noteNames[5];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0B && keyArray[2] == 0x0F){
+        keyString = noteNames[6];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x07 && keyArray[2] == 0x0F){
+        keyString = noteNames[7];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0E){
+        keyString = noteNames[8];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0D){
+        keyString = noteNames[9];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0B){
+        keyString = noteNames[10];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x07){
+        keyString = noteNames[11];
+      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
+        keyString = "";
+      } else {
+        keyString = "";
+      }
+
+    //Update display
+    u8g2.clearBuffer();         // clear the internal memory
+    u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
+    u8g2.drawStr(2,10,"Helllo World!");  // write something to the internal memory
+    u8g2.setCursor(2,20);
+    u8g2.print(keyArray[0], HEX);
+    u8g2.print(keyArray[1], HEX);
+    u8g2.print(keyArray[2], HEX);
+    u8g2.drawStr(2,30, keyString.c_str());
+    u8g2.sendBuffer();          // transfer internal memory to the display
+
+    //Toggle LED
+    digitalToggle(LED_BUILTIN);
+  }
+
 }
 
 void sampleISR(){
@@ -170,6 +224,17 @@ void setup() {
     &scanKeysHandle
   );  /* Pointer to store the task handle*/
 
+  //Initialise Display Loop
+  TaskHandle_t displayHandle = NULL;
+  xTaskCreate(
+    displayUpdateTask,/* Function that implements the task */
+    "displayUpdate",/* Text name for the task */
+    256,      /* Stack size in words, not bytes*/
+    NULL,/* Parameter passed into the task */
+    1,/* Task priority*/
+    &displayHandle
+  );  /* Pointer to store the task handle*/
+
   vTaskStartScheduler();
 
   //Initialise UART
@@ -178,62 +243,4 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  static uint32_t next = millis();
-  static uint32_t count = 0;
-  String keyString;
-
-
-
-  if (millis() > next) {
-    next += interval;
-
-    if (keyArray[0] == 0x0E && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[0];
-      } else if(keyArray[0] == 0x0D && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[1];
-      } else if (keyArray[0] == 0x0B && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[2];
-      } else if (keyArray[0] == 0x07 && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[3];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0E && keyArray[2] == 0x0F){
-        keyString = noteNames[4];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0D && keyArray[2] == 0x0F){
-        keyString = noteNames[5];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0B && keyArray[2] == 0x0F){
-        keyString = noteNames[6];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x07 && keyArray[2] == 0x0F){
-        keyString = noteNames[7];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0E){
-        keyString = noteNames[8];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0D){
-        keyString = noteNames[9];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0B){
-        keyString = noteNames[10];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x07){
-        keyString = noteNames[11];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = "";
-      } else {
-        keyString = "";
-      }
-
-    //Update display
-    u8g2.clearBuffer();         // clear the internal memory
-    u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
-    u8g2.drawStr(2,10,"Helllo World!");  // write something to the internal memory
-
-
-
-
-    u8g2.setCursor(2,20);
-    u8g2.print(keyArray[0], HEX);
-    u8g2.print(keyArray[1], HEX);
-    u8g2.print(keyArray[2], HEX);
-    u8g2.drawStr(2,30, keyString.c_str());
-    u8g2.sendBuffer();          // transfer internal memory to the display
-
-    //Toggle LED
-    digitalToggle(LED_BUILTIN);
-  }
 }
