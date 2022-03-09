@@ -3,6 +3,22 @@
 #include<string.h>
 #include <STM32FreeRTOS.h>
 
+enum notes {
+  C  = 0,
+  Cs = 1,
+  D  = 2,
+  Ds = 3,
+  E  = 4,
+  F  = 5,
+  Fs = 6,
+  G  = 7,
+  Gs = 8,
+  A  = 9,
+  As = 10,
+  B  = 11,
+  None = 12
+};
+
 //Constants
 const uint32_t interval = 100; //Display update interval
 
@@ -34,7 +50,6 @@ const int DRST_BIT = 4;
 const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
-//TODO: Define step sizes for 12 notes
 const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
@@ -72,6 +87,69 @@ void setRow(uint8_t rowIdx){
       digitalWrite(REN_PIN,HIGH);
 }
 
+void findKeywithFunc(void (*func)(notes)) {
+      bool C  = (~(keyArray)[0] >> 0) & B1;
+      bool Cs = (~(keyArray)[0] >> 1) & B1;
+      bool D  = (~(keyArray)[0] >> 2) & B1;
+      bool Ds = (~(keyArray)[0] >> 3) & B1;
+      bool E  = (~(keyArray)[1] >> 0) & B1;
+      bool F  = (~(keyArray)[1] >> 1) & B1;
+      bool Fs = (~(keyArray)[1] >> 2) & B1;
+      bool G  = (~(keyArray)[1] >> 3) & B1;
+      bool Gs = (~(keyArray)[2] >> 0) & B1;
+      bool A  = (~(keyArray)[2] >> 1) & B1;
+      bool As = (~(keyArray)[2] >> 2) & B1;
+      bool B  = (~(keyArray)[2] >> 3) & B1;
+
+      if(C)  {func((notes)0);}
+      if(Cs) {func((notes)1);}
+      if(D)  {func((notes)2);}
+      if(Ds) {func((notes)3);}
+      if(E)  {func((notes)4);}
+      if(F)  {func((notes)5);}
+      if(Fs) {func((notes)6);}
+      if(G)  {func((notes)7);}
+      if(Gs) {func((notes)8);}
+      if(A)  {func((notes)9);}
+      if(As) {func((notes)10);}
+      if(B)  {func((notes)11);}
+      if(!C && !Cs && !D && !Ds && !E && !F && !Fs && !G && !Gs && !A && !As && !B) {
+              func((notes)12);
+      }
+}
+
+void setStepSize(notes note) {
+      int32_t localCurrentStepSize = 0;
+      switch(note){
+        case None:
+          break;
+        default:
+          localCurrentStepSize = stepSizes[note];
+          break;
+      }
+      __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
+}
+
+void setNoteName(notes note) {
+      String keyString = "";
+      switch(note){
+        case None:
+          break;
+        default:
+          keyString = noteNames[note];
+          break;
+      }
+      u8g2.clearBuffer();         // clear the internal memory
+      u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
+      u8g2.drawStr(2,10,"Helllo World!");  // write something to the internal memory
+      u8g2.setCursor(2,20);
+      u8g2.print(keyArray[0], HEX);
+      u8g2.print(keyArray[1], HEX);
+      u8g2.print(keyArray[2], HEX);
+      u8g2.drawStr(2,30, keyString.c_str());
+      u8g2.sendBuffer();          // transfer internal memory to the display
+}
+
 void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
@@ -84,85 +162,21 @@ void scanKeysTask(void * pvParameters) {
         setRow(i);
         delayMicroseconds(2);
         keyArray[i] = readCols();
-      }
-      if (keyArray[0] == 0x0E && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[0];
-      } else if(keyArray[0] == 0x0D && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[1];
-      } else if (keyArray[0] == 0x0B && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[2];
-      } else if (keyArray[0] == 0x07 && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[3];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0E && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[4];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0D && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[5];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0B && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[6];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x07 && keyArray[2] == 0x0F){
-        localCurrentStepSize = stepSizes[7];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0E){
-        localCurrentStepSize = stepSizes[8];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0D){
-        localCurrentStepSize = stepSizes[9];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0B){
-        localCurrentStepSize = stepSizes[10];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x07){
-        localCurrentStepSize = stepSizes[11];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        localCurrentStepSize = 0;
-      }
+    }
+    // Call function for setting stepsize
+    findKeywithFunc(&setStepSize);
 
-      __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
   }
 }
 
 void displayUpdateTask(void * pvParameters){
   const TickType_t xFrequency = 100/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
-  String keyString;
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
-    if (keyArray[0] == 0x0E && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[0];
-      } else if(keyArray[0] == 0x0D && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[1];
-      } else if (keyArray[0] == 0x0B && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[2];
-      } else if (keyArray[0] == 0x07 && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = noteNames[3];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0E && keyArray[2] == 0x0F){
-        keyString = noteNames[4];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0D && keyArray[2] == 0x0F){
-        keyString = noteNames[5];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0B && keyArray[2] == 0x0F){
-        keyString = noteNames[6];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x07 && keyArray[2] == 0x0F){
-        keyString = noteNames[7];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0E){
-        keyString = noteNames[8];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0D){
-        keyString = noteNames[9];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0B){
-        keyString = noteNames[10];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x07){
-        keyString = noteNames[11];
-      } else if (keyArray[0] == 0x0F && keyArray[1] == 0x0F && keyArray[2] == 0x0F){
-        keyString = "";
-      } else {
-        keyString = "";
-      }
 
-    //Update display
-    u8g2.clearBuffer();         // clear the internal memory
-    u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
-    u8g2.drawStr(2,10,"Helllo World!");  // write something to the internal memory
-    u8g2.setCursor(2,20);
-    u8g2.print(keyArray[0], HEX);
-    u8g2.print(keyArray[1], HEX);
-    u8g2.print(keyArray[2], HEX);
-    u8g2.drawStr(2,30, keyString.c_str());
-    u8g2.sendBuffer();          // transfer internal memory to the display
+    // Call function for setting notename
+    findKeywithFunc(&setNoteName);
 
     //Toggle LED
     digitalToggle(LED_BUILTIN);
