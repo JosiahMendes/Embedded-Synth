@@ -55,6 +55,9 @@ const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B
 volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
 
+// CAN communication variables
+volatile uint8_t TX_Message[8]= {0};
+
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
@@ -147,7 +150,26 @@ void setNoteName(notes note) {
       u8g2.print(keyArray[1], HEX);
       u8g2.print(keyArray[2], HEX);
       u8g2.drawStr(2,30, keyString.c_str());
+      // CAN comms
+      u8g2.setCursor(66,30);
+      u8g2.print((char) TX_Message[0]);
+      u8g2.print(TX_Message[1]);
+
+      u8g2.print(TX_Message[2]);
+
       u8g2.sendBuffer();          // transfer internal memory to the display
+}
+
+void setCommMessage(notes note){
+  switch(note){
+        case None:
+          break;
+        default:
+          TX_Message[0] = 'P';
+          TX_Message[1] = 4;
+          TX_Message[2] = note;
+          break;
+      }
 }
 
 void scanKeysTask(void * pvParameters) {
