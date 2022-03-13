@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include<string.h>
 #include <STM32FreeRTOS.h>
+#include<ES_CAN.h>
 
 enum notes {
   C  = 0,
@@ -56,7 +57,9 @@ volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
 
 // CAN communication variables
-volatile uint8_t TX_Message[8]= {0};
+uint8_t TX_Message[8]= {0};
+uint8_t RX_Message[8]={0};
+
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
@@ -153,9 +156,9 @@ void setNoteName(notes note) {
       // CAN comms
       u8g2.setCursor(66,30);
       u8g2.print((char) TX_Message[0]);
-      u8g2.print(TX_Message[1]);
+      u8g2.print(RX_Message[1]);
 
-      u8g2.print(TX_Message[2]);
+      u8g2.print(RX_Message[2]);
 
       u8g2.sendBuffer();          // transfer internal memory to the display
 }
@@ -168,6 +171,7 @@ void setCommMessage(notes note){
           TX_Message[0] = 'P';
           TX_Message[1] = 4;
           TX_Message[2] = note;
+          CAN_TX(0x123, TX_Message);
           break;
       }
 }
@@ -187,6 +191,7 @@ void scanKeysTask(void * pvParameters) {
     }
     // Call function for setting stepsize
     findKeywithFunc(&setStepSize);
+    findKeywithFunc(&setCommMessage);
 
   }
 }
@@ -194,6 +199,7 @@ void scanKeysTask(void * pvParameters) {
 void displayUpdateTask(void * pvParameters){
   const TickType_t xFrequency = 100/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
+  uint32_t ID = 0x123;
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
@@ -202,6 +208,9 @@ void displayUpdateTask(void * pvParameters){
 
     //Toggle LED
     digitalToggle(LED_BUILTIN);
+
+    while (CAN_CheckRXLevel())
+      CAN_RX(ID, RX_Message);
   }
 
 }
@@ -248,6 +257,11 @@ void setup() {
   sampleTimer->setOverflow(22000, HERTZ_FORMAT);
   sampleTimer->attachInterrupt(sampleISR);
   sampleTimer->resume();
+
+  //Initialise CAN
+  CAN_Init(true);
+  setCANFilter(0x123,0x7ff);
+  CAN_Start();
 
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
