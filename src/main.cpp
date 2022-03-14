@@ -166,6 +166,8 @@ void setNoteName(notes note) {
 void setCommMessage(notes note){
   switch(note){
         case None:
+          TX_Message[0] = 'N';
+          CAN_TX(0x123, TX_Message);
           break;
         default:
           TX_Message[0] = 'P';
