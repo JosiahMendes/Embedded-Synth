@@ -55,6 +55,12 @@ const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B
 volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
 
+// Knob
+volatile uint8_t prev_Knob = 0;
+volatile uint8_t current_Knob = 0;
+volatile int8_t rotation_increment = 0; // can be negative
+volatile int8_t knob3_rotation_variable = 0; // from 0 to 16
+
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
@@ -134,6 +140,7 @@ void setNoteName(notes note) {
       String keyString = "";
       switch(note){
         case None:
+          keyString = "Nothing";
           break;
         default:
           keyString = noteNames[note];
@@ -141,24 +148,65 @@ void setNoteName(notes note) {
       }
       u8g2.clearBuffer();         // clear the internal memory
       u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
-      u8g2.drawStr(2,10,"Helllo World!");  // write something to the internal memory
+
+      // Dumb line
+      u8g2.drawStr(2,10,"Not a real piano!");  // write something to the internal memory
+
+      // Key array matrix
       u8g2.setCursor(2,20);
       u8g2.print(keyArray[0], HEX);
       u8g2.print(keyArray[1], HEX);
       u8g2.print(keyArray[2], HEX);
+      u8g2.print(keyArray[3], HEX);
+
+      // Piano note
       u8g2.drawStr(2,30, keyString.c_str());
-      u8g2.sendBuffer();          // transfer internal memory to the display
+
+      // Right hand knob
+      u8g2.setCursor(52,20);
+      u8g2.print(rotation_increment, DEC);
+      u8g2.setCursor(67,20);
+      u8g2.print(knob3_rotation_variable, DEC);
+
+      // transfer internal memory to the display
+      u8g2.sendBuffer();          
+}
+
+void readKnob(uint8_t prev, uint8_t current) {
+  bool b0 = (prev >> 1) & B1;
+  bool a0 = (prev >> 0) & B1;
+  bool b1 = (current >> 1) & B1;
+  bool a1 = (current >> 0) & B1;
+
+  if (b0 == b1 && a1 == a0) {
+    // no change 00->00, 01->01, 10->10, 11->11
+    rotation_increment = 0;
+  } else if (b0 != b1 &&  a1 != a0) {
+    // impossible transition: 00->11, 01->10, 10->01, 11->00
+    //  q6a: interpret impossible transitions by assuming impossible transition is same as last legal transition: so increase or decrease by 2
+    if (rotation_increment == 1 || rotation_increment == 2) {
+      rotation_increment = 2;
+    } else if (rotation_increment == -1 || rotation_increment == -2) {
+      rotation_increment = -2;
+    }
+  } else if (prev == 0 && current == 1 || prev == 1 && current == 3 || prev == 2 && current == 0 || prev == 3 && current == 2) {
+    // +1: 00->01, 01->11, 10->00, 11->10
+    rotation_increment = 1;
+  } else if (prev == 0 && current == 2 || prev == 1 && current == 0 || prev == 2 && current == 3 || prev == 3 && current == 1) {
+    // -1: 00->10, 01->00, 10->11, 11->01
+    rotation_increment = -1;
+  }
 }
 
 void scanKeysTask(void * pvParameters) {
-  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
+  const TickType_t xFrequency = 50/portTICK_PERIOD_MS; // Q6a: atttempt to improve knob accuracy by increasing sample rate
   TickType_t xLastWakeTime= xTaskGetTickCount();
 
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
     int32_t localCurrentStepSize = 0;
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
         delayMicroseconds(2);
         keyArray[i] = readCols();
@@ -166,6 +214,21 @@ void scanKeysTask(void * pvParameters) {
     // Call function for setting stepsize
     findKeywithFunc(&setStepSize);
 
+    // Find rotation of knob
+    // TODO: protected with a key array mutex?
+    current_Knob = keyArray[3];
+    readKnob(prev_Knob, current_Knob);
+
+    int8_t local_knob3_rotation_variable ;
+    if (knob3_rotation_variable + rotation_increment > 16) {
+      local_knob3_rotation_variable = 16;
+    } else if (knob3_rotation_variable + rotation_increment < 0) {
+      local_knob3_rotation_variable = 0;
+    } else {
+      local_knob3_rotation_variable = knob3_rotation_variable + rotation_increment;
+    }
+    prev_Knob = current_Knob;
+    __atomic_store_n(&knob3_rotation_variable,local_knob3_rotation_variable,__ATOMIC_RELAXED);
   }
 }
 
@@ -189,6 +252,7 @@ void sampleISR(){
   phaseAcc += currentStepSize;
 
   int32_t Vout = phaseAcc >> 24;
+  Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
 
   analogWrite(OUTR_PIN, Vout+128);
 }
