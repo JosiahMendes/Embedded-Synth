@@ -63,9 +63,11 @@ uint8_t RX_Message[8] = {0};
 
 // queue handler
 QueueHandle_t msgInQ;
+QueueHandle_t msgOutQ;
 
 // global handle for a FreeRTOS mutex
 SemaphoreHandle_t RX_Message_Mutex;
+SemaphoreHandle_t CAN_TX_Semaphore;
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
@@ -176,13 +178,13 @@ void setCommMessage(notes note){
   switch(note){
         case None:
           TX_Message[0] = 'N';
-          CAN_TX(0x123, TX_Message);
+          xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
           break;
         default:
           TX_Message[0] = 'P';
           TX_Message[1] = 4;
           TX_Message[2] = note;
-          CAN_TX(0x123, TX_Message);
+          xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
           break;
       }
 }
@@ -250,6 +252,15 @@ void decodeTask(void * pvParameters) {
   }
 }
 
+void CAN_TX_Task(void * pvParameters) {
+  uint8_t msgOut[8];
+  while (true) {
+    xQueueReceive(msgOutQ, msgOut, portMAX_DELAY);
+    xSemaphoreTake(CAN_TX_Semaphore, portMAX_DELAY);
+    CAN_TX(0x123, msgOut);
+  }
+}
+
 void sampleISR(){
   static int32_t phaseAcc = 0;
   phaseAcc += currentStepSize;
@@ -266,6 +277,10 @@ void CAN_RX_ISR(void) {
   CAN_RX(ID, RX_Message_ISR);
   // place data in the queue
   xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
+}
+
+void CAN_TX_ISR(void) {
+  xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
 }
 
 void setup() {
@@ -306,13 +321,16 @@ void setup() {
   CAN_Init(true);
   setCANFilter(0x123,0x7ff);
   CAN_RegisterRX_ISR(CAN_RX_ISR);
+  CAN_RegisterTX_ISR(CAN_TX_ISR);
   CAN_Start();
 
   //Initialise queue handler
   msgInQ = xQueueCreate(36, 8);
+  msgOutQ = xQueueCreate(36, 8);
 
   //Create mutex and assign
   RX_Message_Mutex = xSemaphoreCreateMutex();
+  CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
 
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
@@ -345,6 +363,17 @@ void setup() {
     NULL,         /* Parameter passed into the task */
     1,            /* Task priority */
     &decodeHandle /* Pointer to store the task handle */
+  );
+
+  //Initialise transmit thread
+  TaskHandle_t transmitHandle = NULL;
+  xTaskCreate(
+    CAN_TX_Task,   /* Function that implements the task */
+    "transmit",     /* Text name for the task */
+    256,          /* Stack size in words, not bytes */
+    NULL,         /* Parameter passed into the task */
+    1,            /* Task priority */
+    &transmitHandle /* Pointer to store the task handle */
   );
 
   vTaskStartScheduler();
