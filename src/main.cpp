@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
-#include<string.h>
+#include <string.h>
 #include <STM32FreeRTOS.h>
-#include<ES_CAN.h>
+#include <ES_CAN.h>
 
 enum notes {
   C  = 0,
@@ -57,9 +57,14 @@ volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
 
 // CAN communication variables
-uint8_t TX_Message[8]= {0};
-uint8_t RX_Message[8]={0};
+uint8_t TX_Message[8] = {0};
+uint8_t RX_Message[8] = {0};
 
+// queue handler
+QueueHandle_t msgInQ;
+
+// global handle for a FreeRTOS mutex
+SemaphoreHandle_t RX_Message_Mutex;
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
@@ -156,9 +161,11 @@ void setNoteName(notes note) {
       // CAN comms
       u8g2.setCursor(66,30);
       u8g2.print((char) TX_Message[0]);
-      u8g2.print(RX_Message[1]);
 
+      xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
+      u8g2.print(RX_Message[1]);
       u8g2.print(RX_Message[2]);
+      xSemaphoreGive(RX_Message_Mutex);
 
       u8g2.sendBuffer();          // transfer internal memory to the display
 }
@@ -210,11 +217,34 @@ void displayUpdateTask(void * pvParameters){
 
     //Toggle LED
     digitalToggle(LED_BUILTIN);
-
-    while (CAN_CheckRXLevel())
-      CAN_RX(ID, RX_Message);
   }
 
+}
+
+void decodeTask(void * pvParameters) {
+  uint8_t local_RX_Message[8] = {0};
+  while (true) {
+    // wait until a message is available in the queue
+    xQueueReceive(msgInQ, local_RX_Message, portMAX_DELAY);
+
+    xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
+    std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
+    xSemaphoreGive(RX_Message_Mutex);
+
+    switch(RX_Message[0]) {
+      case 'R':
+        {
+          setStepSize((notes)12);
+          break;
+        }
+      case 'P':
+        {
+          int32_t localCurrentStepSize = stepSizes[RX_Message[2]] << (RX_Message[1] - 4);
+          __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
+          break;
+        }
+    }
+  }
 }
 
 void sampleISR(){
@@ -224,6 +254,15 @@ void sampleISR(){
   int32_t Vout = phaseAcc >> 24;
 
   analogWrite(OUTR_PIN, Vout+128);
+}
+
+void CAN_RX_ISR(void) {
+  uint8_t RX_Message_ISR[8];
+  uint32_t ID;
+  // receive message data
+  CAN_RX(ID, RX_Message_ISR);
+  // place data in the queue
+  xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
 }
 
 void setup() {
@@ -263,7 +302,14 @@ void setup() {
   //Initialise CAN
   CAN_Init(true);
   setCANFilter(0x123,0x7ff);
+  CAN_RegisterRX_ISR(CAN_RX_ISR);
   CAN_Start();
+
+  //Initialise queue handler
+  msgInQ = xQueueCreate(36, 8);
+
+  //Create mutex and assign
+  RX_Message_Mutex = xSemaphoreCreateMutex();
 
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
@@ -286,6 +332,17 @@ void setup() {
     1,/* Task priority*/
     &displayHandle
   );  /* Pointer to store the task handle*/
+
+  //Initialise Decode loop
+  TaskHandle_t decodeHandle = NULL;
+  xTaskCreate(
+    decodeTask,   /* Function that implements the task */
+    "decode",     /* Text name for the task */
+    256,          /* Stack size in words, not bytes */
+    NULL,         /* Parameter passed into the task */
+    1,            /* Task priority */
+    &decodeHandle /* Pointer to store the task handle */
+  );
 
   vTaskStartScheduler();
 
