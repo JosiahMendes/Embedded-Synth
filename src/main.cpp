@@ -51,7 +51,8 @@ const int DRST_BIT = 4;
 const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
-const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
+//const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
+const int32_t stepSizes [] = {817217093, 865810744, 917293736, 971839820, 1029628605, 1090853364, 1155719084, 1224442465, 1297251922, 1374389535, 1456114953, 1542699542};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
@@ -135,7 +136,8 @@ void setStepSize(notes note) {
         case None:
           break;
         default:
-          localCurrentStepSize = stepSizes[note];
+          //localCurrentStepSize = stepSizes[note];
+          localCurrentStepSize = stepSizes[note] >> 4;
           break;
       }
       __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
@@ -239,7 +241,8 @@ void decodeTask(void * pvParameters) {
         }
       case 'P':
         {
-          int32_t localCurrentStepSize = stepSizes[RX_Message[2]] << (RX_Message[1] - 4);
+          //int32_t localCurrentStepSize = stepSizes[RX_Message[2]] << (RX_Message[1] - 4);
+          int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (RX_Message[1]);
           __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
           break;
         }
