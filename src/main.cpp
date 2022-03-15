@@ -57,6 +57,10 @@ const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B
 volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
 
+// global variable determining mode
+bool sender = true;
+uint8_t octave = 2;
+
 // CAN communication variables
 uint8_t TX_Message[8] = {0};
 uint8_t RX_Message[8] = {0};
@@ -138,8 +142,7 @@ void setStepSize(notes note) {
         case None:
           break;
         default:
-          //localCurrentStepSize = stepSizes[note];
-          localCurrentStepSize = stepSizes[note] >> 4;
+          localCurrentStepSize = stepSizes[note] >> (8 - octave);
           break;
       }
       __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
@@ -161,6 +164,9 @@ void setNoteName(notes note) {
       u8g2.print(keyArray[0], HEX);
       u8g2.print(keyArray[1], HEX);
       u8g2.print(keyArray[2], HEX);
+      sender ? u8g2.drawStr(66,20,"Sender") : u8g2.drawStr(66,20,"Receiver");
+      u8g2.setCursor(120,20);
+      u8g2.print(octave, HEX);
       u8g2.drawStr(2,30, keyString.c_str());
       // CAN comms
       u8g2.setCursor(66,30);
@@ -182,7 +188,8 @@ void setCommMessage(notes note){
           break;
         default:
           TX_Message[0] = 'P';
-          TX_Message[1] = 4;
+          //TX_Message[1] = 4;
+          TX_Message[1] = octave;
           TX_Message[2] = note;
           xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
           break;
@@ -235,19 +242,29 @@ void decodeTask(void * pvParameters) {
     std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
     xSemaphoreGive(RX_Message_Mutex);
 
-    switch(RX_Message[0]) {
-      case 'R':
-        {
-          setStepSize((notes)12);
-          break;
-        }
-      case 'P':
-        {
-          //int32_t localCurrentStepSize = stepSizes[RX_Message[2]] << (RX_Message[1] - 4);
-          int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (RX_Message[1]);
-          __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
-          break;
-        }
+    // message received from the sender
+    if(RX_Message[0] == 'S') {
+      sender = false;
+      octave = RX_Message[1];
+    }
+
+    if(sender) {
+      // sender does not generate sound themselves
+    }
+    else {
+      switch(RX_Message[0]) {
+        case 'R':
+          {
+            setStepSize((notes)12);
+            break;
+          }
+        case 'P':
+          {
+            int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (8 - RX_Message[1]);
+            __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
+            break;
+          }
+      }
     }
   }
 }
@@ -263,11 +280,13 @@ void CAN_TX_Task(void * pvParameters) {
 
 void sampleISR(){
   static int32_t phaseAcc = 0;
-  phaseAcc += currentStepSize;
+  if(!sender) {
+    phaseAcc += currentStepSize;
 
-  int32_t Vout = phaseAcc >> 24;
+    int32_t Vout = phaseAcc >> 24;
 
-  analogWrite(OUTR_PIN, Vout+128);
+    analogWrite(OUTR_PIN, Vout+128);
+  }
 }
 
 void CAN_RX_ISR(void) {
