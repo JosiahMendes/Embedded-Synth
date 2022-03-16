@@ -51,6 +51,7 @@ const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
 const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
+const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	1061711081,	1056367844,	1047042225,	1071042264,	1053813723,	1030792152,	1046317902,	1060317060};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 
@@ -58,6 +59,8 @@ volatile uint8_t keyArray[7];
 SemaphoreHandle_t keyArrayMutex;
 volatile int32_t currentStepSize_1;
 volatile int32_t currentStepSize_2;
+volatile int32_t currentAverage_1;
+volatile int32_t currentAverage_2;
 
 volatile notes notesPressed [] = {None,None};
 
@@ -170,17 +173,23 @@ void setStepSize(notes note_1, notes note_2) {
 
       int32_t localCurrentStepSize_1 = 0;
       int32_t localCurrentStepSize_2 = 0;
+      int32_t localCurrentAverage_1 = 0;
+      int32_t localCurrentAverage_2 = 0;
 
       if (note_1 != None) {
-        localCurrentStepSize_1 = stepSizes[note_2];
+        localCurrentStepSize_1 = stepSizes[note_1];
+        localCurrentAverage_1 = averages[note_1];
       } 
       
       if (note_2 != None) {
-        localCurrentStepSize_2 = stepSizes[note_1];       
+        localCurrentStepSize_2 = stepSizes[note_2];   
+        localCurrentAverage_2 = averages[note_2];    
       }
 
       __atomic_store_n(&currentStepSize_1,localCurrentStepSize_1,__ATOMIC_RELAXED);
       __atomic_store_n(&currentStepSize_2,localCurrentStepSize_2,__ATOMIC_RELAXED);
+      __atomic_store_n(&currentAverage_1,localCurrentAverage_1,__ATOMIC_RELAXED);
+      __atomic_store_n(&currentAverage_2,localCurrentAverage_2,__ATOMIC_RELAXED);
 }
 
 void setNoteName(notes note_1, notes note_2) {
@@ -319,10 +328,23 @@ void displayUpdateTask(void * pvParameters){
 void sampleISR(){
   static int32_t phaseAcc_1 = 0;
   static int32_t phaseAcc_2 = 0;
+  static int32_t phaseAcc_1_DC = 0;
+  static int32_t phaseAcc_2_DC = 0;
+  static int32_t phaseAcc = 0;
+
   phaseAcc_1 += currentStepSize_1;
   phaseAcc_2 += currentStepSize_2;
 
-  int32_t Vout = phaseAcc_1 >> 24;
+  phaseAcc_1_DC = phaseAcc_1 - currentAverage_1;
+  phaseAcc_2_DC = phaseAcc_2 - currentAverage_2;
+
+  if (phaseAcc_1_DC > phaseAcc_2_DC) {
+    phaseAcc = phaseAcc_1_DC;
+  } else {
+    phaseAcc = phaseAcc_2_DC;
+  }
+
+  int32_t Vout = phaseAcc >> 24;
   Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
 
   analogWrite(OUTR_PIN, Vout+128);
