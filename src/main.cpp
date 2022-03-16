@@ -54,6 +54,7 @@ const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 681
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
+SemaphoreHandle_t keyArrayMutex;
 
 // Knob
 volatile uint8_t prev_Knob = 0;
@@ -94,6 +95,7 @@ void setRow(uint8_t rowIdx){
 }
 
 void findKeywithFunc(void (*func)(notes)) {
+      xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       bool C  = (~(keyArray)[0] >> 0) & B1;
       bool Cs = (~(keyArray)[0] >> 1) & B1;
       bool D  = (~(keyArray)[0] >> 2) & B1;
@@ -106,6 +108,7 @@ void findKeywithFunc(void (*func)(notes)) {
       bool A  = (~(keyArray)[2] >> 1) & B1;
       bool As = (~(keyArray)[2] >> 2) & B1;
       bool B  = (~(keyArray)[2] >> 3) & B1;
+      xSemaphoreGive(keyArrayMutex);
 
       if(C)  {func((notes)0);}
       if(Cs) {func((notes)1);}
@@ -154,10 +157,12 @@ void setNoteName(notes note) {
 
       // Key array matrix
       u8g2.setCursor(2,20);
+      xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       u8g2.print(keyArray[0], HEX);
       u8g2.print(keyArray[1], HEX);
       u8g2.print(keyArray[2], HEX);
       u8g2.print(keyArray[3], HEX);
+      xSemaphoreGive(keyArrayMutex);
 
       // Piano note
       u8g2.drawStr(2,30, keyString.c_str());
@@ -209,14 +214,18 @@ void scanKeysTask(void * pvParameters) {
     for (int i = 0; i < 4; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
         delayMicroseconds(2);
+        xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
         keyArray[i] = readCols();
+        xSemaphoreGive(keyArrayMutex);
     }
     // Call function for setting stepsize
     findKeywithFunc(&setStepSize);
 
     // Find rotation of knob
     // TODO: protected with a key array mutex?
+    xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
     current_Knob = keyArray[3];
+    xSemaphoreGive(keyArrayMutex);
     readKnob(prev_Knob, current_Knob);
 
     int8_t local_knob3_rotation_variable ;
@@ -284,12 +293,30 @@ void setup() {
   u8g2.begin();
   setOutMuxBit(DEN_BIT, HIGH);  //Enable display power supply
 
+  //Profiling Execution Time of Task
+  //1. Disable all tasks except the one being profiled by commenting out the xTaskCreate calls
+  //2. Disable the sampleTimer ISR by commenting out the attachInterrupt call
+  //3. Change the while loop of your Task into a for loop of 32 iterations
+  //4. Make sure your loop runs the WORST CASE scenario of the given task
+  //5. Run the program and observe the execution time of the task as an average of 32 iterations
+
+  //Replace your outer while loop with the following:
+  //uint32_t startTime = micros();
+  //for (int iter = 0; iter < 32; iter++) {
+  //   givenTask()
+  //}
+  //Serial.println(micros()-startTime);
+
+
   //Initialise timer
   TIM_TypeDef *Instance = TIM1;
   HardwareTimer *sampleTimer= new HardwareTimer(Instance);
   sampleTimer->setOverflow(22000, HERTZ_FORMAT);
   sampleTimer->attachInterrupt(sampleISR);
   sampleTimer->resume();
+
+  //Initialise Semaphore
+  keyArrayMutex = xSemaphoreCreateMutex();
 
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
