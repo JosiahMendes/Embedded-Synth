@@ -53,8 +53,13 @@ const int HKOE_BIT = 6;
 const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
-volatile int32_t currentStepSize;
+
+// volatile int32_t currentStepSize;
 SemaphoreHandle_t keyArrayMutex;
+volatile int32_t currentStepSize_1;
+volatile int32_t currentStepSize_2;
+
+volatile notes notesPressed [] = {None,None};
 
 // Knob
 volatile uint8_t prev_Knob = 0;
@@ -94,7 +99,7 @@ void setRow(uint8_t rowIdx){
       digitalWrite(REN_PIN,HIGH);
 }
 
-void findKeywithFunc(void (*func)(notes)) {
+void findKeywithFunc(void (*func)(notes, notes)) {
       xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       uint8_t CDs = keyArray[0];
       uint8_t EG = keyArray[1];
@@ -114,6 +119,33 @@ void findKeywithFunc(void (*func)(notes)) {
       bool B  = (~GsB >> 3) & B1;
       
 
+      bool bool_array [] = {C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B};
+      notes localNotesPressed [] = {None,None};
+
+      // Return an array of 2 notes
+      bool current_key = false;
+      notes current_note = None;
+      
+      for (int i=0; i<12; i++) {
+        current_key = bool_array[i];
+        if (current_key) {current_note = ((notes)i);}
+        if (current_note != None) {
+          if (localNotesPressed[0] == None) {
+            localNotesPressed[0] = current_note;
+          } else if (localNotesPressed[1] == None){
+            localNotesPressed[1] = current_note;
+          } else {
+            //ignore for now
+          }
+        }
+        current_note = None;
+      }
+
+      func(localNotesPressed[0], localNotesPressed[1]);
+
+      // __atomic_store_n(&localNotesPressed,notesPressed,__ATOMIC_RELAXED);
+
+      /*
       if(C)  {func((notes)0);}
       if(Cs) {func((notes)1);}
       if(D)  {func((notes)2);}
@@ -129,22 +161,35 @@ void findKeywithFunc(void (*func)(notes)) {
       if(!C && !Cs && !D && !Ds && !E && !F && !Fs && !G && !Gs && !A && !As && !B) {
               func((notes)12);
       }
+      */
 }
 
-void setStepSize(notes note) {
-      int32_t localCurrentStepSize = 0;
-      switch(note){
-        case None:
-          break;
-        default:
-          localCurrentStepSize = stepSizes[note];
-          break;
+void setStepSize(notes note_1, notes note_2) {
+
+      // Serial.print("Set step size with" + String(note_1) + " and " + String(note_2));
+
+      int32_t localCurrentStepSize_1 = 0;
+      int32_t localCurrentStepSize_2 = 0;
+
+      if (note_1 != None) {
+        localCurrentStepSize_1 = stepSizes[note_2];
+      } 
+      
+      if (note_2 != None) {
+        localCurrentStepSize_2 = stepSizes[note_1];       
       }
-      __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
+
+      __atomic_store_n(&currentStepSize_1,localCurrentStepSize_1,__ATOMIC_RELAXED);
+      __atomic_store_n(&currentStepSize_2,localCurrentStepSize_2,__ATOMIC_RELAXED);
 }
 
-void setNoteName(notes note) {
-      String keyString = "";
+void setNoteName(notes note_1, notes note_2) {
+
+      // Serial.print("Set note name with" + String(note_1) + " and " + String(note_2));
+
+      String keyString_1 = "Nothing";
+      String keyString_2 = "Nothing";
+      /*
       switch(note){
         case None:
           keyString = "Nothing";
@@ -153,6 +198,16 @@ void setNoteName(notes note) {
           keyString = noteNames[note];
           break;
       }
+      */
+
+      if (note_1 != None) {
+        keyString_1 = noteNames[note_1];
+      } 
+      
+      if (note_2 != None) {
+        keyString_2 = noteNames[note_2]; 
+      }
+
       u8g2.clearBuffer();         // clear the internal memory
       u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
 
@@ -169,7 +224,8 @@ void setNoteName(notes note) {
       xSemaphoreGive(keyArrayMutex);
 
       // Piano note
-      u8g2.drawStr(2,30, keyString.c_str());
+      u8g2.drawStr(2,30, keyString_1.c_str());
+      u8g2.drawStr(52,30, keyString_2.c_str());
 
       // Right hand knob
       u8g2.setCursor(52,20);
@@ -261,10 +317,12 @@ void displayUpdateTask(void * pvParameters){
 }
 
 void sampleISR(){
-  static int32_t phaseAcc = 0;
-  phaseAcc += currentStepSize;
+  static int32_t phaseAcc_1 = 0;
+  static int32_t phaseAcc_2 = 0;
+  phaseAcc_1 += currentStepSize_1;
+  phaseAcc_2 += currentStepSize_2;
 
-  int32_t Vout = phaseAcc >> 24;
+  int32_t Vout = phaseAcc_1 >> 24;
   Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
 
   analogWrite(OUTR_PIN, Vout+128);
@@ -327,7 +385,8 @@ void setup() {
   xTaskCreate(
     scanKeysTask,/* Function that implements the task */
     "scanKeys",/* Text name for the task */
-    64,      /* Stack size in words, not bytes*/
+    256,
+    // 64,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
     &scanKeysHandle
