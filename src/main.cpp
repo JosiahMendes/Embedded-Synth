@@ -96,19 +96,23 @@ void setRow(uint8_t rowIdx){
 
 void findKeywithFunc(void (*func)(notes)) {
       xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-      bool C  = (~(keyArray)[0] >> 0) & B1;
-      bool Cs = (~(keyArray)[0] >> 1) & B1;
-      bool D  = (~(keyArray)[0] >> 2) & B1;
-      bool Ds = (~(keyArray)[0] >> 3) & B1;
-      bool E  = (~(keyArray)[1] >> 0) & B1;
-      bool F  = (~(keyArray)[1] >> 1) & B1;
-      bool Fs = (~(keyArray)[1] >> 2) & B1;
-      bool G  = (~(keyArray)[1] >> 3) & B1;
-      bool Gs = (~(keyArray)[2] >> 0) & B1;
-      bool A  = (~(keyArray)[2] >> 1) & B1;
-      bool As = (~(keyArray)[2] >> 2) & B1;
-      bool B  = (~(keyArray)[2] >> 3) & B1;
+      uint8_t CDs = keyArray[0];
+      uint8_t EG = keyArray[1];
+      uint8_t GsB =keyArray[2];
       xSemaphoreGive(keyArrayMutex);
+      bool C  = (~CDs >> 0) & B1;
+      bool Cs = (~CDs >> 1) & B1;
+      bool D  = (~CDs >> 2) & B1;
+      bool Ds = (~CDs >> 3) & B1;
+      bool E  = (~EG  >> 0) & B1;
+      bool F  = (~EG  >> 1) & B1;
+      bool Fs = (~EG  >> 2) & B1;
+      bool G  = (~EG  >> 3) & B1;
+      bool Gs = (~GsB >> 0) & B1;
+      bool A  = (~GsB >> 1) & B1;
+      bool As = (~GsB >> 2) & B1;
+      bool B  = (~GsB >> 3) & B1;
+      
 
       if(C)  {func((notes)0);}
       if(Cs) {func((notes)1);}
