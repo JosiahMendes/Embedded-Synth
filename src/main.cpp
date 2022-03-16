@@ -59,7 +59,7 @@ volatile int32_t currentStepSize;
 
 // global variable determining mode
 bool sender = true;
-uint8_t octave = 2;
+uint8_t octave = 6;
 
 // CAN communication variables
 uint8_t TX_Message[8] = {0};
@@ -302,6 +302,21 @@ void CAN_TX_ISR(void) {
   xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
 }
 
+void sendHandShake(void * pvParameters) {
+  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
+  TickType_t xLastWakeTime= xTaskGetTickCount();
+
+  while (true) {
+    if(sender) {
+      vTaskDelayUntil( &xLastWakeTime, xFrequency );
+      TX_Message[0] = 'S';
+      TX_Message[1] = octave;
+      //TX_Message[2] = note;
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    }
+  }
+}
+
 void setup() {
   // put your setup code here, to run once:
 
@@ -337,7 +352,8 @@ void setup() {
   sampleTimer->resume();
 
   //Initialise CAN
-  CAN_Init(true);
+  //CAN_Init(true);
+  CAN_Init(false);
   setCANFilter(0x123,0x7ff);
   CAN_RegisterRX_ISR(CAN_RX_ISR);
   CAN_RegisterTX_ISR(CAN_TX_ISR);
@@ -393,6 +409,17 @@ void setup() {
     NULL,         /* Parameter passed into the task */
     1,            /* Task priority */
     &transmitHandle /* Pointer to store the task handle */
+  );
+
+  //Initialise handshake thread
+  TaskHandle_t handShakeHandle = NULL;
+  xTaskCreate(
+    sendHandShake,
+    "handshake",
+    256,
+    NULL,
+    1,
+    &handShakeHandle
   );
 
   vTaskStartScheduler();
