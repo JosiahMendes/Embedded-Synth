@@ -59,7 +59,9 @@ volatile int32_t currentStepSize;
 
 // global variable determining mode
 bool sender = true;
-uint8_t octave = 6;
+uint8_t octave = 5;
+//std::atomic<bool> externalKeyPressed = false;
+volatile bool externalKeyPressed = false;
 
 // CAN communication variables
 uint8_t TX_Message[8] = {0};
@@ -183,12 +185,11 @@ void setNoteName(notes note) {
 void setCommMessage(notes note){
   switch(note){
         case None:
-          TX_Message[0] = 'N';
+          TX_Message[0] = 'R';
           xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
           break;
         default:
           TX_Message[0] = 'P';
-          //TX_Message[1] = 4;
           TX_Message[1] = octave;
           TX_Message[2] = note;
           xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
@@ -199,20 +200,19 @@ void setCommMessage(notes note){
 void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
+  if(sender) {
+    while (true) {
+      vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
-  while (true) {
-    vTaskDelayUntil( &xLastWakeTime, xFrequency );
-    int32_t localCurrentStepSize = 0;
-
-    for (int i = 0; i < 3; i++) {
-        setRow(i);
-        delayMicroseconds(2);
-        keyArray[i] = readCols();
+      for (int i = 0; i < 3; i++) {
+          setRow(i);
+          delayMicroseconds(2);
+          keyArray[i] = readCols();
+      }
+      // Call function for setting stepsize
+      //findKeywithFunc(&setStepSize);
+      findKeywithFunc(&setCommMessage);
     }
-    // Call function for setting stepsize
-    findKeywithFunc(&setStepSize);
-    findKeywithFunc(&setCommMessage);
-
   }
 }
 
@@ -234,7 +234,19 @@ void displayUpdateTask(void * pvParameters){
 
 void decodeTask(void * pvParameters) {
   uint8_t local_RX_Message[8] = {0};
+  bool local_externalKeyPressed;
   while (true) {
+    for (int i = 0; i < 3; i++) {
+      setRow(i);
+      delayMicroseconds(2);
+      keyArray[i] = readCols();
+    }
+    // Call function for setting stepsize
+    if(!sender && !externalKeyPressed)
+      findKeywithFunc(&setStepSize);
+    if(sender)
+      findKeywithFunc(&setCommMessage);
+
     // wait until a message is available in the queue
     xQueueReceive(msgInQ, local_RX_Message, portMAX_DELAY);
 
@@ -255,11 +267,15 @@ void decodeTask(void * pvParameters) {
       switch(RX_Message[0]) {
         case 'R':
           {
+            local_externalKeyPressed = false;
+            __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
             setStepSize((notes)12);
             break;
           }
         case 'P':
           {
+            local_externalKeyPressed = true;
+            __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
             int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (8 - RX_Message[1]);
             __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
             break;
@@ -305,12 +321,11 @@ void CAN_TX_ISR(void) {
 void sendHandShake(void * pvParameters) {
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
-
   while (true) {
     if(sender) {
       vTaskDelayUntil( &xLastWakeTime, xFrequency );
       TX_Message[0] = 'S';
-      TX_Message[1] = octave;
+      TX_Message[1] = octave-1;
       //TX_Message[2] = note;
       xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
     }
@@ -366,7 +381,7 @@ void setup() {
   //Create mutex and assign
   RX_Message_Mutex = xSemaphoreCreateMutex();
   CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
-
+  
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
   xTaskCreate(
@@ -377,7 +392,7 @@ void setup() {
     1,/* Task priority*/
     &scanKeysHandle
   );  /* Pointer to store the task handle*/
-
+  
   //Initialise Display Loop
   TaskHandle_t displayHandle = NULL;
   xTaskCreate(
