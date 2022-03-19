@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include<string.h>
 #include <STM32FreeRTOS.h>
+#include <algorithm>
 
 enum notes {
   C  = 0,
@@ -55,14 +56,16 @@ const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	106
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 
-// volatile int32_t currentStepSize;
 SemaphoreHandle_t keyArrayMutex;
-volatile int32_t currentStepSize_1;
-volatile int32_t currentStepSize_2;
-volatile int32_t currentAverage_1;
-volatile int32_t currentAverage_2;
+// volatile int32_t currentStepSize_1;
+// volatile int32_t currentStepSize_2;
+// volatile int32_t currentAverage_1;
+// volatile int32_t currentAverage_2;
+volatile int32_t currentStepSize[2];
+volatile int32_t currentAverage[2];
+volatile int8_t num_keys;
 
-volatile notes notesPressed [] = {None,None};
+volatile notes notesPressed[2];
 
 // Knob
 volatile uint8_t prev_Knob = 0;
@@ -102,7 +105,7 @@ void setRow(uint8_t rowIdx){
       digitalWrite(REN_PIN,HIGH);
 }
 
-void findKeywithFunc(void (*func)(notes, notes)) {
+void findKeywithFunc(void (*func)(notes*)) {
       xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       uint8_t CDs = keyArray[0];
       uint8_t EG = keyArray[1];
@@ -121,11 +124,10 @@ void findKeywithFunc(void (*func)(notes, notes)) {
       bool As = (~GsB >> 2) & B1;
       bool B  = (~GsB >> 3) & B1;
       
-
       bool bool_array [] = {C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B};
-      notes localNotesPressed [] = {None,None};
+      notes localNotesPressed [2];
 
-      // Return an array of 2 notes
+      // Return an array of 10 enum notes
       bool current_key = false;
       notes current_note = None;
       
@@ -137,16 +139,29 @@ void findKeywithFunc(void (*func)(notes, notes)) {
             localNotesPressed[0] = current_note;
           } else if (localNotesPressed[1] == None){
             localNotesPressed[1] = current_note;
-          } else {
-            //ignore for now
+          } /* else if (localNotesPressed[2] == None){
+            localNotesPressed[2] = current_note;
+          } else if (localNotesPressed[3] == None){
+            localNotesPressed[3] = current_note;
+          } else if (localNotesPressed[4] == None){
+            localNotesPressed[4] = current_note;
+          } else if (localNotesPressed[5] == None){
+            localNotesPressed[5] = current_note;
+          } else if (localNotesPressed[6] == None){
+            localNotesPressed[6] = current_note;
+          } else if (localNotesPressed[7] == None){
+            localNotesPressed[7] = current_note;
+          } else if (localNotesPressed[8] == None){
+            localNotesPressed[8] = current_note;
+          } else if (localNotesPressed[9] == None){
+            localNotesPressed[9] = current_note;
+          } */ else {
           }
         }
         current_note = None;
       }
 
-      func(localNotesPressed[0], localNotesPressed[1]);
-
-      // __atomic_store_n(&localNotesPressed,notesPressed,__ATOMIC_RELAXED);
+      func(localNotesPressed);
 
       /*
       if(C)  {func((notes)0);}
@@ -167,54 +182,49 @@ void findKeywithFunc(void (*func)(notes, notes)) {
       */
 }
 
-void setStepSize(notes note_1, notes note_2) {
+void setStepSize(notes *note_list) {
 
       // Serial.print("Set step size with" + String(note_1) + " and " + String(note_2));
 
-      int32_t localCurrentStepSize_1 = 0;
-      int32_t localCurrentStepSize_2 = 0;
-      int32_t localCurrentAverage_1 = 0;
-      int32_t localCurrentAverage_2 = 0;
+      //TODO: mutex and atomic storage for arrays? Currently removed as a feature
+      //int32_t localCurrentStepSize [10];
+      //int32_t localCurrentAverage [10];
+      //currentStepSize = localCurrentStepSize;
+      //currentAverage = localCurrentAverage;
+      for (int i=0; i<2; i++) {
+        if (note_list[i] != None) {
+          currentStepSize[i] = stepSizes[note_list[i]];
+          currentAverage[i] = averages[note_list[i]];
+        } else {
+          currentStepSize[i] = 0;
+          currentAverage[i] = 0;
+        }      
+      }
 
+      /*
       if (note_1 != None) {
         localCurrentStepSize_1 = stepSizes[note_1];
         localCurrentAverage_1 = averages[note_1];
-      } 
-      
+      }  
       if (note_2 != None) {
         localCurrentStepSize_2 = stepSizes[note_2];   
         localCurrentAverage_2 = averages[note_2];    
       }
-
-      __atomic_store_n(&currentStepSize_1,localCurrentStepSize_1,__ATOMIC_RELAXED);
+     __atomic_store_n(&currentStepSize_1,localCurrentStepSize_1,__ATOMIC_RELAXED);
       __atomic_store_n(&currentStepSize_2,localCurrentStepSize_2,__ATOMIC_RELAXED);
       __atomic_store_n(&currentAverage_1,localCurrentAverage_1,__ATOMIC_RELAXED);
       __atomic_store_n(&currentAverage_2,localCurrentAverage_2,__ATOMIC_RELAXED);
+      */
 }
 
-void setNoteName(notes note_1, notes note_2) {
-
-      // Serial.print("Set note name with" + String(note_1) + " and " + String(note_2));
-
-      String keyString_1 = "Nothing";
-      String keyString_2 = "Nothing";
-      /*
-      switch(note){
-        case None:
-          keyString = "Nothing";
+void setNoteName(notes *note_list) {
+      String keyString = "";
+      for (int i=0; i<2; i++) {
+        if (note_list[i] != None) {
+          keyString += noteNames[note_list[i]];
+        } else {
           break;
-        default:
-          keyString = noteNames[note];
-          break;
-      }
-      */
-
-      if (note_1 != None) {
-        keyString_1 = noteNames[note_1];
-      } 
-      
-      if (note_2 != None) {
-        keyString_2 = noteNames[note_2]; 
+        }      
       }
 
       u8g2.clearBuffer();         // clear the internal memory
@@ -233,8 +243,7 @@ void setNoteName(notes note_1, notes note_2) {
       xSemaphoreGive(keyArrayMutex);
 
       // Piano note
-      u8g2.drawStr(2,30, keyString_1.c_str());
-      u8g2.drawStr(52,30, keyString_2.c_str());
+      u8g2.drawStr(2,30, keyString.c_str());
 
       // Right hand knob
       u8g2.setCursor(52,20);
@@ -326,25 +335,22 @@ void displayUpdateTask(void * pvParameters){
 }
 
 void sampleISR(){
-  static int32_t phaseAcc_1 = 0;
-  static int32_t phaseAcc_2 = 0;
-  static int32_t phaseAcc_1_DC = 0;
-  static int32_t phaseAcc_2_DC = 0;
-  static int32_t phaseAcc = 0;
 
-  phaseAcc_1 += currentStepSize_1;
-  phaseAcc_2 += currentStepSize_2;
-
-  phaseAcc_1_DC = phaseAcc_1 - currentAverage_1;
-  phaseAcc_2_DC = phaseAcc_2 - currentAverage_2;
-
-  if (phaseAcc_1_DC > phaseAcc_2_DC) {
-    phaseAcc = phaseAcc_1_DC;
-  } else {
-    phaseAcc = phaseAcc_2_DC;
+  static int32_t phaseAcc[2]  = {0,0};
+  static int32_t phaseAcc_DC[2]  = {0,0};
+  static int8_t phaseAcc_num = 1;
+  for (int i=0; i<10; i++) {
+    if (currentStepSize[i] != None) {
+      phaseAcc[i] += currentStepSize[i];
+      phaseAcc_DC[i] = phaseAcc[i] - currentAverage[i];
+    } else {
+      break;
+    }      
   }
 
-  int32_t Vout = phaseAcc >> 24;
+  int32_t phaseAcc_final = *std::max_element(phaseAcc_DC, phaseAcc_DC + phaseAcc_num);
+
+  int32_t Vout = phaseAcc_final >> 24;
   Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
 
   analogWrite(OUTR_PIN, Vout+128);
