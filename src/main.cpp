@@ -58,9 +58,12 @@ volatile uint8_t keyArray[7];
 volatile int32_t currentStepSize;
 
 // global variable determining mode
-bool sender = true;
-uint8_t octave = 5;
-//std::atomic<bool> externalKeyPressed = false;
+bool receiver = true;
+bool position_set = false; // indicates whether position has been set
+uint8_t position = 6; // undefined
+uint8_t octave = 7; // some initial value
+uint8_t lowest_octave = 3; // position 0 will have this octave
+//size_t id_hash;
 volatile bool externalKeyPressed = false;
 
 // CAN communication variables
@@ -166,8 +169,10 @@ void setNoteName(notes note) {
       u8g2.print(keyArray[0], HEX);
       u8g2.print(keyArray[1], HEX);
       u8g2.print(keyArray[2], HEX);
-      sender ? u8g2.drawStr(66,20,"Sender") : u8g2.drawStr(66,20,"Receiver");
+      receiver ? u8g2.drawStr(66,20,"Receiver") : u8g2.drawStr(66,20,"Sender");
       u8g2.setCursor(120,20);
+      u8g2.print(position, HEX);
+      u8g2.setCursor(120,30);
       u8g2.print(octave, HEX);
       u8g2.drawStr(2,30, keyString.c_str());
       // CAN comms
@@ -184,35 +189,33 @@ void setNoteName(notes note) {
 
 void setCommMessage(notes note){
   switch(note){
-        case None:
-          TX_Message[0] = 'R';
-          xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
-          break;
-        default:
-          TX_Message[0] = 'P';
-          TX_Message[1] = octave;
-          TX_Message[2] = note;
-          xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
-          break;
-      }
+    case None:
+      TX_Message[0] = 'R';
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+      break;
+    default:
+      TX_Message[0] = 'P';
+      TX_Message[1] = octave;
+      TX_Message[2] = note;
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+      break;
+  }
 }
 
 void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
-  if(sender) {
-    while (true) {
-      vTaskDelayUntil( &xLastWakeTime, xFrequency );
+  while (true) {
+    vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
-      for (int i = 0; i < 3; i++) {
-          setRow(i);
-          delayMicroseconds(2);
-          keyArray[i] = readCols();
-      }
-      // Call function for setting stepsize
-      //findKeywithFunc(&setStepSize);
-      findKeywithFunc(&setCommMessage);
+    for (int i = 0; i < 3; i++) {
+        setRow(i);
+        delayMicroseconds(2);
+        keyArray[i] = readCols();
     }
+    // Call function for setting stepsize
+    //findKeywithFunc(&setStepSize);
+    findKeywithFunc(&setCommMessage);
   }
 }
 
@@ -232,6 +235,31 @@ void displayUpdateTask(void * pvParameters){
 
 }
 
+void turnoffEast() {
+  digitalWrite(OUT_PIN, LOW);
+  setRow(6);
+  digitalWrite(REN_PIN,1);
+  delayMicroseconds(2);
+  readCols();
+  digitalWrite(REN_PIN,0);
+}
+
+void broadcastPosition() {
+  TX_Message[0] = 'H';
+  TX_Message[1] = 0;
+  TX_Message[2] = position;
+  xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+}
+
+void broadcastEndOfHandshake() {
+  if(position != 0) {
+    receiver = false;
+  }
+  octave = position + lowest_octave;
+  TX_Message[0] = 'E';
+  xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+}
+
 void decodeTask(void * pvParameters) {
   uint8_t local_RX_Message[8] = {0};
   bool local_externalKeyPressed;
@@ -242,9 +270,9 @@ void decodeTask(void * pvParameters) {
       keyArray[i] = readCols();
     }
     // Call function for setting stepsize
-    if(!sender && !externalKeyPressed)
+    if(receiver && !externalKeyPressed)
       findKeywithFunc(&setStepSize);
-    if(sender)
+    if(!receiver)
       findKeywithFunc(&setCommMessage);
 
     // wait until a message is available in the queue
@@ -253,34 +281,54 @@ void decodeTask(void * pvParameters) {
     xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
     std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
     xSemaphoreGive(RX_Message_Mutex);
-
-    // message received from the sender
-    if(RX_Message[0] == 'S') {
-      sender = false;
-      octave = RX_Message[1];
-    }
-
-    if(sender) {
-      // sender does not generate sound themselves
-    }
-    else {
-      switch(RX_Message[0]) {
-        case 'R':
-          {
-            local_externalKeyPressed = false;
-            __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
-            setStepSize((notes)12);
-            break;
+    
+    switch(RX_Message[0]) {
+      case 'R':
+        {
+          local_externalKeyPressed = false;
+          __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
+          setStepSize((notes)12);
+          break;
+        }
+      case 'P':
+        {
+          local_externalKeyPressed = true;
+          __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
+          int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (8 - RX_Message[1]);
+          __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
+          break;
+        }
+      case 'H':
+        {
+          setRow(5);
+          delayMicroseconds(2);
+          keyArray[5] = readCols();
+          if(keyArray[5] >> 3 & B1) { // west turned off 
+            if(!position_set) {
+              position = RX_Message[2] + 1;
+              position_set = true;
+            }
+            if(keyArray[6] >> 3 & B1) { // check if east turned off
+              broadcastEndOfHandshake();
+            }
+            else {
+              turnoffEast();
+              broadcastPosition();
+            }
           }
-        case 'P':
-          {
-            local_externalKeyPressed = true;
-            __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
-            int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (8 - RX_Message[1]);
-            __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
-            break;
+          break;
+        }
+      case 'E':
+        {
+          if(position == 0) {
+            receiver = true;
           }
-      }
+          else {
+            receiver = false;
+          }
+          octave = position + lowest_octave;
+          break;
+        }
     }
   }
 }
@@ -296,7 +344,7 @@ void CAN_TX_Task(void * pvParameters) {
 
 void sampleISR(){
   static int32_t phaseAcc = 0;
-  if(!sender) {
+  if(receiver) {
     phaseAcc += currentStepSize;
 
     int32_t Vout = phaseAcc >> 24;
@@ -318,16 +366,36 @@ void CAN_TX_ISR(void) {
   xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
 }
 
-void sendHandShake(void * pvParameters) {
-  const TickType_t xFrequency = 50/portTICK_PERIOD_MS;
-  TickType_t xLastWakeTime= xTaskGetTickCount();
-  while (true) {
-    if(sender) {
-      vTaskDelayUntil( &xLastWakeTime, xFrequency );
-      TX_Message[0] = 'S';
-      TX_Message[1] = octave-1;
-      //TX_Message[2] = note;
-      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+void initialCheck() {
+  digitalWrite(OUT_PIN,1);
+  for(int i = 5; i <= 6; i++) {
+    setRow(i);
+    digitalWrite(REN_PIN,1);   
+    delayMicroseconds(2);
+    keyArray[i] = readCols();
+    digitalWrite(REN_PIN,0);   
+  }
+  if((keyArray[5] >> 3) & B1) { // west not connected
+    position = 0;
+    position_set = true;
+    if((keyArray[6] >> 3) & B1) {
+      CAN_Init(true);
+    }
+  }
+}
+
+void initialHandshake() {
+  // uint32_t id = HAL_GetUIDw0(); // unique id
+  // std::hash<uint32_t> myHash;
+  // id_hash = myHash(id);
+  if(position_set) { // left most
+    if((keyArray[6] >> 3) & B1) { // the only module
+      octave = position + lowest_octave;
+      // end of handshake
+    }
+    else {
+      turnoffEast();
+      broadcastPosition();
     }
   }
 }
@@ -372,7 +440,7 @@ void setup() {
   setCANFilter(0x123,0x7ff);
   CAN_RegisterRX_ISR(CAN_RX_ISR);
   CAN_RegisterTX_ISR(CAN_TX_ISR);
-  CAN_Start();
+  //CAN_Start();
 
   //Initialise queue handler
   msgInQ = xQueueCreate(36, 8);
@@ -426,16 +494,21 @@ void setup() {
     &transmitHandle /* Pointer to store the task handle */
   );
 
-  //Initialise handshake thread
-  TaskHandle_t handShakeHandle = NULL;
-  xTaskCreate(
-    sendHandShake,
-    "handshake",
-    256,
-    NULL,
-    1,
-    &handShakeHandle
-  );
+  //Initialise handshake: setting west and east out high
+  digitalWrite(OUT_PIN, HIGH);
+  for(int i = 5; i <= 6; i++) {
+    setRow(i);
+    digitalWrite(REN_PIN,1);
+    delayMicroseconds(2);
+    readCols();
+    digitalWrite(REN_PIN,0);
+  }
+
+  delayMicroseconds(1000000); // wait 1 sec
+  initialCheck();
+  CAN_Start(); // start here as CAN_Init value can change inside initialCheck()
+  delayMicroseconds(1000000); // wait 1 sec
+  initialHandshake();
 
   vTaskStartScheduler();
 
