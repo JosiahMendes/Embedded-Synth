@@ -55,14 +55,12 @@ const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	106
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 
-// volatile int32_t currentStepSize;
 SemaphoreHandle_t keyArrayMutex;
-// volatile int32_t currentStepSize_1;
-// volatile int32_t currentStepSize_2;
-// volatile int32_t currentAverage_1;
-// volatile int32_t currentAverage_2;
+SemaphoreHandle_t stepSizeMutex;
 
 const uint8_t n = 4;
+
+// Try copy to these variables before performing operations
 volatile int32_t currentStepSize[n];
 volatile int32_t currentAverage[n];
 
@@ -166,80 +164,37 @@ void findKeywithFunc(void (*func)(notes*)) {
 
       //func(localNotesPressed[0], localNotesPressed[1]);
       // __atomic_store_n(&localNotesPressed,notesPressed,__ATOMIC_RELAXED);
-      /*
-      if(C)  {func((notes)0);}
-      if(Cs) {func((notes)1);}
-      if(D)  {func((notes)2);}
-      if(Ds) {func((notes)3);}
-      if(E)  {func((notes)4);}
-      if(F)  {func((notes)5);}
-      if(Fs) {func((notes)6);}
-      if(G)  {func((notes)7);}
-      if(Gs) {func((notes)8);}
-      if(A)  {func((notes)9);}
-      if(As) {func((notes)10);}
-      if(B)  {func((notes)11);}
-      if(!C && !Cs && !D && !Ds && !E && !F && !Fs && !G && !Gs && !A && !As && !B) {
-              func((notes)12);
-      }
-      */
 }
 
 void setStepSize(notes* note_list) {
 
+      int32_t localCurrentStepSize;
+      int32_t localCurrentAverage;
       for (int i=0; i<n; i++) {
         if (note_list[i] != None) {
-          currentStepSize[i] = stepSizes[note_list[i]];
-          currentAverage[i] = averages[note_list[i]];
+          localCurrentStepSize = stepSizes[note_list[i]];
+          localCurrentAverage = averages[note_list[i]];
+          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+          currentStepSize[i] = localCurrentStepSize;
+          currentAverage[i] = localCurrentAverage;
+          xSemaphoreGive(stepSizeMutex);
         } else {
-          currentStepSize[i] = 0; //TODO: fix this. this is time consuming
+          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+          currentStepSize[i] = 0;
           currentAverage[i] = 0;
+          xSemaphoreGive(stepSizeMutex);
         }
       }
-
-      // Serial.print("Set step size with" + String(note_1) + " and " + String(note_2));
-      /*
-      int32_t localCurrentStepSize_1 = 0;
-      int32_t localCurrentStepSize_2 = 0;
-      int32_t localCurrentAverage_1 = 0;
-      int32_t localCurrentAverage_2 = 0;
-
-      if (note_1 != None) {
-        localCurrentStepSize_1 = stepSizes[note_1];
-        localCurrentAverage_1 = averages[note_1];
-      } 
-      if (note_2 != None) {
-        localCurrentStepSize_2 = stepSizes[note_2];   
-        localCurrentAverage_2 = averages[note_2];    
-      }
-      __atomic_store_n(&currentStepSize_1,localCurrentStepSize_1,__ATOMIC_RELAXED);
-      __atomic_store_n(&currentStepSize_2,localCurrentStepSize_2,__ATOMIC_RELAXED);
-      __atomic_store_n(&currentAverage_1,localCurrentAverage_1,__ATOMIC_RELAXED);
-      __atomic_store_n(&currentAverage_2,localCurrentAverage_2,__ATOMIC_RELAXED);
-      */
 }
 
 void setNoteName(notes* note_list) {
 
-      // Serial.print("Set note name with" + String(note_1) + " and " + String(note_2));
       String keyString;
       for (int i=0; i<n; i++) {
         if (note_list[i] != None) {
           keyString += noteNames[note_list[i]];
         }
       }
-
-      /*
-      String keyString_1 = "Nothing";
-      String keyString_2 = "Nothing";
-      if (note_1 != None) {
-        keyString_1 = noteNames[note_1];
-      } 
-      
-      if (note_2 != None) {
-        keyString_2 = noteNames[note_2]; 
-      }
-      */
 
       u8g2.clearBuffer();         // clear the internal memory
       u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
@@ -257,8 +212,6 @@ void setNoteName(notes* note_list) {
       xSemaphoreGive(keyArrayMutex);
 
       // Piano note
-      //u8g2.drawStr(2,30, keyString_1.c_str());
-      //u8g2.drawStr(52,30, keyString_2.c_str());
       u8g2.drawStr(2,30, keyString.c_str());
 
       // Right hand knob
@@ -303,7 +256,7 @@ void scanKeysTask(void * pvParameters) {
 
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
-    int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
+    // int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
 
     for (int i = 0; i < 4; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
@@ -315,8 +268,7 @@ void scanKeysTask(void * pvParameters) {
     // Call function for setting stepsize
     findKeywithFunc(&setStepSize);
 
-    // Find rotation of knob
-    // TODO: protected with a key array mutex?
+    // Find rotation of knob, protected with a key array mutex?
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
     current_Knob = keyArray[3];
     xSemaphoreGive(keyArrayMutex);
@@ -351,13 +303,24 @@ void displayUpdateTask(void * pvParameters){
 }
 
 void sampleISR(){
-  static int32_t phaseAcc[n] = {0,0,0,0};
-  static int32_t phaseAcc_DC[n] = {0,0,0,0};
 
-  static int32_t phaseAcc_0 = 0; phaseAcc_0 += currentStepSize[0];
-  static int32_t phaseAcc_1 = 0; phaseAcc_1 += currentStepSize[1];
-  static int32_t phaseAcc_2 = 0; phaseAcc_2 += currentStepSize[2];
-  static int32_t phaseAcc_3 = 0; phaseAcc_3 += currentStepSize[3];
+  int32_t localCurrentStepSize[n];
+  int32_t localCurrentAverage[n];
+
+  for (int i=0; i<n; i++) {
+    xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+    localCurrentStepSize[i] = currentStepSize[i];
+    localCurrentAverage[i] = currentAverage[i];
+    xSemaphoreGive(stepSizeMutex);
+  }  
+
+  static int32_t phaseAcc[n] = {0,0,0,0};
+  static int32_t phaseAcc_DC[n] = {0,0,0,0};  
+
+  static int32_t phaseAcc_0 = 0; phaseAcc_0 += localCurrentStepSize[0];
+  static int32_t phaseAcc_1 = 0; phaseAcc_1 += localCurrentStepSize[1];
+  static int32_t phaseAcc_2 = 0; phaseAcc_2 += localCurrentStepSize[2];
+  static int32_t phaseAcc_3 = 0; phaseAcc_3 += localCurrentStepSize[3];
   // static int32_t phaseAcc_4 = 0; phaseAcc_4 += currentStepSize[4];
   // static int32_t phaseAcc_5 = 0; phaseAcc_5 += currentStepSize[5];
   // static int32_t phaseAcc_6 = 0; phaseAcc_6 += currentStepSize[6];
@@ -365,10 +328,10 @@ void sampleISR(){
   // static int32_t phaseAcc_8 = 0; phaseAcc_8 += currentStepSize[8];
   // static int32_t phaseAcc_9 = 0; phaseAcc_9 += currentStepSize[9];
 
-  static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0 - currentAverage[0];
-  static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1 - currentAverage[1];
-  static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2 - currentAverage[2];
-  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3 - currentAverage[3];
+  static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0 - localCurrentAverage[0];
+  static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1 - localCurrentAverage[1];
+  static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2 - localCurrentAverage[2];
+  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3 - localCurrentAverage[3];
   // static int32_t phaseAcc_DC_4 = 0; phaseAcc_DC_2 = phaseAcc_4 - currentAverage[4];
   // static int32_t phaseAcc_DC_5 = 0; phaseAcc_DC_2 = phaseAcc_5 - currentAverage[5];
   // static int32_t phaseAcc_DC_6 = 0; phaseAcc_DC_2 = phaseAcc_6 - currentAverage[6];
@@ -388,33 +351,6 @@ void sampleISR(){
     phaseAcc_final = phaseAcc_3;
   } 
 
-  /* if (phaseAcc_DC_0 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_0;
-  }
-  if (phaseAcc_DC_1 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_1;
-  }
-  if (phaseAcc_DC_2 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_2;
-  }
-  if (phaseAcc_DC_3 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_3;
-  }*/
-  
-  /*else if (phaseAcc_DC_4 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_4;
-  }else if (phaseAcc_DC_5 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_5;
-  }else if (phaseAcc_DC_6 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_6;
-  }else if (phaseAcc_DC_7 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_7;
-  }else if (phaseAcc_DC_8 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_8;
-  }else {
-    phaseAcc_final = phaseAcc_DC_9;
-  }*/
-
   /*
   for (int i=0; i<n; i++) {
     phaseAcc[i] += currentStepSize[i];
@@ -430,7 +366,7 @@ void sampleISR(){
   */
 
   int32_t Vout = phaseAcc_final >> 24;
-  // Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
+  Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
 
   analogWrite(OUTR_PIN, Vout+128);
 }
@@ -486,6 +422,7 @@ void setup() {
 
   //Initialise Semaphore
   keyArrayMutex = xSemaphoreCreateMutex();
+  stepSizeMutex = xSemaphoreCreateMutex();
 
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
