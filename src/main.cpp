@@ -63,12 +63,13 @@ SemaphoreHandle_t keyArrayMutex;
 // volatile int32_t currentAverage_1;
 // volatile int32_t currentAverage_2;
 
+const int32_t int32_max = 2147483647;
 const uint8_t n = 4;
 volatile int32_t currentStepSize[n];
 volatile int32_t currentAverage[n];
 
 // Knob
-Knob knob0(16, 0, 0);
+Knob knob0(3, 0, 0);
 Knob knob1(16, 0, 1);
 Knob knob2(16, 0, 2);
 Knob knob3(16, 0, 3);
@@ -304,16 +305,75 @@ void sampleISR(){
   // static int32_t phaseAcc_8 = 0; phaseAcc_8 += currentStepSize[8];
   // static int32_t phaseAcc_9 = 0; phaseAcc_9 += currentStepSize[9];
 
-  static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0 - currentAverage[0];
-  static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1 - currentAverage[1];
-  static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2 - currentAverage[2];
-  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3 - currentAverage[3];
-  // static int32_t phaseAcc_DC_4 = 0; phaseAcc_DC_2 = phaseAcc_4 - currentAverage[4];
-  // static int32_t phaseAcc_DC_5 = 0; phaseAcc_DC_2 = phaseAcc_5 - currentAverage[5];
-  // static int32_t phaseAcc_DC_6 = 0; phaseAcc_DC_2 = phaseAcc_6 - currentAverage[6];
-  // static int32_t phaseAcc_DC_7 = 0; phaseAcc_DC_2 = phaseAcc_7 - currentAverage[7];
-  // static int32_t phaseAcc_DC_8 = 0; phaseAcc_DC_2 = phaseAcc_8 - currentAverage[8];
-  // static int32_t phaseAcc_DC_9 = 0; phaseAcc_DC_2 = phaseAcc_9 - currentAverage[9];
+  static int32_t phaseAcc_0_sel = 0;
+  static int32_t phaseAcc_1_sel = 0;
+  static int32_t phaseAcc_2_sel = 0;
+  static int32_t phaseAcc_3_sel = 0;
+
+  if (knob0.get_rotation() == 0) {
+    // Sawtooth
+    phaseAcc_0_sel = phaseAcc_0;
+    phaseAcc_1_sel = phaseAcc_1;
+    phaseAcc_2_sel = phaseAcc_2;
+    phaseAcc_3_sel = phaseAcc_3;
+  } else if (knob0.get_rotation() == 1) {
+    // Square
+    if (phaseAcc_0 > int32_max/2) {
+      phaseAcc_0_sel = 1;
+    } else {
+      phaseAcc_0_sel = 0;
+    }
+    if (phaseAcc_1 > int32_max/2) {
+      phaseAcc_1_sel = 1;
+    } else {
+      phaseAcc_1_sel = 0;
+    }
+    if (phaseAcc_2 > int32_max/2) {
+      phaseAcc_2_sel = 1;
+    } else {
+      phaseAcc_2_sel = 0;
+    }
+    if (phaseAcc_3 > int32_max/2) {
+      phaseAcc_3_sel = 1;
+    } else {
+      phaseAcc_3_sel = 0;
+    }
+  } else if (knob0.get_rotation() == 2) {
+    // Triangle
+    if (phaseAcc_0 > int32_max/2) {
+      phaseAcc_0_sel = -1 + (phaseAcc_0/int32_max - 0.5)*4;
+    } else {
+      phaseAcc_0_sel = 1 - (phaseAcc_0/int32_max)*4;;
+    }
+    if (phaseAcc_1 > int32_max/2) {
+      phaseAcc_1_sel = -1 + (phaseAcc_1/int32_max - 0.5)*4;
+    } else {
+      phaseAcc_1_sel = 1 - (phaseAcc_1/int32_max)*4;;
+    }
+    if (phaseAcc_2 > int32_max/2) {
+      phaseAcc_2_sel = -1 + (phaseAcc_2/int32_max - 0.5)*4;
+    } else {
+      phaseAcc_2_sel = 1 - (phaseAcc_2/int32_max)*4;;
+    }
+    if (phaseAcc_3 > int32_max/2) {
+      phaseAcc_3_sel = -1 + (phaseAcc_3/int32_max - 0.5)*4;
+    } else {
+      phaseAcc_3_sel = 1 - (phaseAcc_3/int32_max)*4;;
+    }
+  } else if (knob0.get_rotation() == 3) {
+    // Sine
+  }
+
+  static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0_sel - currentAverage[0];
+  static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1_sel - currentAverage[1];
+  static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2_sel - currentAverage[2];
+  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3_sel - currentAverage[3];
+  static int32_t phaseAcc_DC_4 = 0; phaseAcc_DC_2 = phaseAcc_4 - currentAverage[4];
+  static int32_t phaseAcc_DC_5 = 0; phaseAcc_DC_2 = phaseAcc_5 - currentAverage[5];
+  static int32_t phaseAcc_DC_6 = 0; phaseAcc_DC_2 = phaseAcc_6 - currentAverage[6];
+  static int32_t phaseAcc_DC_7 = 0; phaseAcc_DC_2 = phaseAcc_7 - currentAverage[7];
+  static int32_t phaseAcc_DC_8 = 0; phaseAcc_DC_2 = phaseAcc_8 - currentAverage[8];
+  static int32_t phaseAcc_DC_9 = 0; phaseAcc_DC_2 = phaseAcc_9 - currentAverage[9];
 
   static int32_t phaseAcc_final = 0;
 
