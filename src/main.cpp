@@ -56,12 +56,7 @@ const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	106
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 
-// volatile int32_t currentStepSize;
 SemaphoreHandle_t keyArrayMutex;
-// volatile int32_t currentStepSize_1;
-// volatile int32_t currentStepSize_2;
-// volatile int32_t currentAverage_1;
-// volatile int32_t currentAverage_2;
 
 const int32_t int32_max = 2147483647;
 const uint8_t n = 4;
@@ -168,41 +163,31 @@ void findKeywithFunc(void (*func)(notes*)) {
 
       //func(localNotesPressed[0], localNotesPressed[1]);
       // __atomic_store_n(&localNotesPressed,notesPressed,__ATOMIC_RELAXED);
-      /*
-      if(C)  {func((notes)0);}
-      if(Cs) {func((notes)1);}
-      if(D)  {func((notes)2);}
-      if(Ds) {func((notes)3);}
-      if(E)  {func((notes)4);}
-      if(F)  {func((notes)5);}
-      if(Fs) {func((notes)6);}
-      if(G)  {func((notes)7);}
-      if(Gs) {func((notes)8);}
-      if(A)  {func((notes)9);}
-      if(As) {func((notes)10);}
-      if(B)  {func((notes)11);}
-      if(!C && !Cs && !D && !Ds && !E && !F && !Fs && !G && !Gs && !A && !As && !B) {
-              func((notes)12);
-      }
-      */
 }
 
 void setStepSize(notes* note_list) {
 
+      int32_t localCurrentStepSize;
+      int32_t localCurrentAverage;
       for (int i=0; i<n; i++) {
         if (note_list[i] != None) {
-          currentStepSize[i] = stepSizes[note_list[i]];
-          currentAverage[i] = averages[note_list[i]];
+          localCurrentStepSize = stepSizes[note_list[i]];
+          localCurrentAverage = averages[note_list[i]];
+          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+          currentStepSize[i] = localCurrentStepSize;
+          currentAverage[i] = localCurrentAverage;
+          xSemaphoreGive(stepSizeMutex);
         } else {
-          currentStepSize[i] = 0; //TODO: fix this. this is time consuming
+          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+          currentStepSize[i] = 0;
           currentAverage[i] = 0;
+          xSemaphoreGive(stepSizeMutex);
         }
       }
 }
 
 void setNoteName(notes* note_list) {
 
-      // Serial.print("Set note name with" + String(note_1) + " and " + String(note_2));
       String keyString;
       for (int i=0; i<n; i++) {
         if (note_list[i] != None) {
@@ -248,7 +233,7 @@ void scanKeysTask(void * pvParameters) {
 
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
-    int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
+    // int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
 
     for (int i = 0; i < 7; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
@@ -260,8 +245,7 @@ void scanKeysTask(void * pvParameters) {
     // Call function for setting stepsize
     findKeywithFunc(&setStepSize);
 
-    // Find rotation of knob
-    // TODO: protected with a key array mutex?
+    // Find rotation of knob, protected with a key array mutex?
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
     knob3.read(keyArray[3]);
     knob2.read(keyArray[3]);
@@ -447,13 +431,14 @@ void setup() {
 
   //Initialise Semaphore
   keyArrayMutex = xSemaphoreCreateMutex();
+  stepSizeMutex = xSemaphoreCreateMutex();
 
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
   xTaskCreate(
     scanKeysTask,/* Function that implements the task */
     "scanKeys",/* Text name for the task */
-    256,
+    512,
     // 64,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
@@ -465,7 +450,7 @@ void setup() {
   xTaskCreate(
     displayUpdateTask,/* Function that implements the task */
     "displayUpdate",/* Text name for the task */
-    256,      /* Stack size in words, not bytes*/
+    512,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
     &displayHandle
