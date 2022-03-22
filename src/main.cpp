@@ -62,7 +62,7 @@ SemaphoreHandle_t keyArrayMutex;
 // volatile int32_t currentAverage_1;
 // volatile int32_t currentAverage_2;
 
-const uint8_t n = 3;
+const uint8_t n = 4;
 volatile int32_t currentStepSize[n];
 volatile int32_t currentAverage[n];
 
@@ -125,7 +125,7 @@ void findKeywithFunc(void (*func)(notes*)) {
       
 
       bool bool_array [] = {C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B};
-      notes localNotesPressed [] = {None,None,None};
+      notes localNotesPressed [] = {None,None,None,None};
 
       // Return an array of 2 notes
       bool current_key = false;
@@ -141,9 +141,9 @@ void findKeywithFunc(void (*func)(notes*)) {
             localNotesPressed[1] = current_note;
           } else if (localNotesPressed[2] == None){
             localNotesPressed[2] = current_note;
-          } /*else if (localNotesPressed[3] == None){
+          } else if (localNotesPressed[3] == None){
             localNotesPressed[3] = current_note;
-          } else if (localNotesPressed[4] == None){
+          } /* else if (localNotesPressed[4] == None){
             localNotesPressed[4] = current_note;
           } else if (localNotesPressed[5] == None){
             localNotesPressed[5] = current_note;
@@ -303,7 +303,7 @@ void scanKeysTask(void * pvParameters) {
 
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
-    int32_t localCurrentStepSize[n] = {0,0,0}; //TODO: is this critical?
+    int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
 
     for (int i = 0; i < 4; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
@@ -351,26 +351,69 @@ void displayUpdateTask(void * pvParameters){
 }
 
 void sampleISR(){
-  static int32_t phaseAcc[n] = {0,0,0};
-  static int32_t phaseAcc_DC[n] = {0,0,0};
+  static int32_t phaseAcc[n] = {0,0,0,0};
+  static int32_t phaseAcc_DC[n] = {0,0,0,0};
 
   static int32_t phaseAcc_0 = 0; phaseAcc_0 += currentStepSize[0];
   static int32_t phaseAcc_1 = 0; phaseAcc_1 += currentStepSize[1];
   static int32_t phaseAcc_2 = 0; phaseAcc_2 += currentStepSize[2];
+  static int32_t phaseAcc_3 = 0; phaseAcc_3 += currentStepSize[3];
+  // static int32_t phaseAcc_4 = 0; phaseAcc_4 += currentStepSize[4];
+  // static int32_t phaseAcc_5 = 0; phaseAcc_5 += currentStepSize[5];
+  // static int32_t phaseAcc_6 = 0; phaseAcc_6 += currentStepSize[6];
+  // static int32_t phaseAcc_7 = 0; phaseAcc_7 += currentStepSize[7];
+  // static int32_t phaseAcc_8 = 0; phaseAcc_8 += currentStepSize[8];
+  // static int32_t phaseAcc_9 = 0; phaseAcc_9 += currentStepSize[9];
 
   static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0 - currentAverage[0];
   static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1 - currentAverage[1];
   static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2 - currentAverage[2];
+  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3 - currentAverage[3];
+  // static int32_t phaseAcc_DC_4 = 0; phaseAcc_DC_2 = phaseAcc_4 - currentAverage[4];
+  // static int32_t phaseAcc_DC_5 = 0; phaseAcc_DC_2 = phaseAcc_5 - currentAverage[5];
+  // static int32_t phaseAcc_DC_6 = 0; phaseAcc_DC_2 = phaseAcc_6 - currentAverage[6];
+  // static int32_t phaseAcc_DC_7 = 0; phaseAcc_DC_2 = phaseAcc_7 - currentAverage[7];
+  // static int32_t phaseAcc_DC_8 = 0; phaseAcc_DC_2 = phaseAcc_8 - currentAverage[8];
+  // static int32_t phaseAcc_DC_9 = 0; phaseAcc_DC_2 = phaseAcc_9 - currentAverage[9];
 
   static int32_t phaseAcc_final = 0;
 
-  if (phaseAcc_DC_0 > phaseAcc_DC_1 && phaseAcc_DC_0 > phaseAcc_DC_2) {
-    phaseAcc_final = phaseAcc_DC_0;
-  } else if (phaseAcc_DC_1 > phaseAcc_DC_0 && phaseAcc_DC_1 > phaseAcc_DC_2) {
-    phaseAcc_final = phaseAcc_DC_1;
+  if (phaseAcc_0 > phaseAcc_1 && phaseAcc_0 > phaseAcc_2 && phaseAcc_0 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_0;
+  } else if (phaseAcc_1 > phaseAcc_0 && phaseAcc_1 > phaseAcc_2 && phaseAcc_1 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_1;
+  } else if (phaseAcc_2 > phaseAcc_1 && phaseAcc_2 > phaseAcc_0 && phaseAcc_2 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_2;
   } else {
+    phaseAcc_final = phaseAcc_3;
+  } 
+
+  /* if (phaseAcc_DC_0 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_0;
+  }
+  if (phaseAcc_DC_1 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_1;
+  }
+  if (phaseAcc_DC_2 > phaseAcc_final) {
     phaseAcc_final = phaseAcc_DC_2;
   }
+  if (phaseAcc_DC_3 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_3;
+  }*/
+  
+  /*else if (phaseAcc_DC_4 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_4;
+  }else if (phaseAcc_DC_5 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_5;
+  }else if (phaseAcc_DC_6 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_6;
+  }else if (phaseAcc_DC_7 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_7;
+  }else if (phaseAcc_DC_8 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_8;
+  }else {
+    phaseAcc_final = phaseAcc_DC_9;
+  }*/
 
   /*
   for (int i=0; i<n; i++) {
@@ -384,18 +427,6 @@ void sampleISR(){
       phaseAcc_final = phaseAcc_DC[i];
     }
   }
-  */
-
-  /*
-  static int32_t phaseAcc_1 = 0;
-  static int32_t phaseAcc_2 = 0;
-  static int32_t phaseAcc_1_DC = 0;
-  static int32_t phaseAcc_2_DC = 0;
-  static int32_t phaseAcc = 0;
-  phaseAcc_1 += currentStepSize_1;
-  phaseAcc_2 += currentStepSize_2;
-  phaseAcc_1_DC = phaseAcc_1 - currentAverage_1;
-  phaseAcc_2_DC = phaseAcc_2 - currentAverage_2;
   */
 
   int32_t Vout = phaseAcc_final >> 24;
