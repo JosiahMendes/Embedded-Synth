@@ -51,10 +51,20 @@ const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
 const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
+const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	1061711081,	1056367844,	1047042225,	1071042264,	1053813723,	1030792152,	1046317902,	1060317060};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
-volatile int32_t currentStepSize;
+
+// volatile int32_t currentStepSize;
 SemaphoreHandle_t keyArrayMutex;
+// volatile int32_t currentStepSize_1;
+// volatile int32_t currentStepSize_2;
+// volatile int32_t currentAverage_1;
+// volatile int32_t currentAverage_2;
+
+const uint8_t n = 4;
+volatile int32_t currentStepSize[n];
+volatile int32_t currentAverage[n];
 
 // Knob
 volatile uint8_t prev_Knob = 0;
@@ -94,7 +104,7 @@ void setRow(uint8_t rowIdx){
       digitalWrite(REN_PIN,HIGH);
 }
 
-void findKeywithFunc(void (*func)(notes)) {
+void findKeywithFunc(void (*func)(notes*)) {
       xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       uint8_t CDs = keyArray[0];
       uint8_t EG = keyArray[1];
@@ -114,6 +124,49 @@ void findKeywithFunc(void (*func)(notes)) {
       bool B  = (~GsB >> 3) & B1;
       
 
+      bool bool_array [] = {C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B};
+      notes localNotesPressed [] = {None,None,None,None};
+
+      // Return an array of 2 notes
+      bool current_key = false;
+      notes current_note = None;
+      
+      for (int i=0; i<12; i++) {
+        current_key = bool_array[i];
+        if (current_key) {current_note = ((notes)i);}
+        if (current_note != None) {
+          if (localNotesPressed[0] == None) {
+            localNotesPressed[0] = current_note;
+          } else if (localNotesPressed[1] == None){
+            localNotesPressed[1] = current_note;
+          } else if (localNotesPressed[2] == None){
+            localNotesPressed[2] = current_note;
+          } else if (localNotesPressed[3] == None){
+            localNotesPressed[3] = current_note;
+          } /* else if (localNotesPressed[4] == None){
+            localNotesPressed[4] = current_note;
+          } else if (localNotesPressed[5] == None){
+            localNotesPressed[5] = current_note;
+          } else if (localNotesPressed[6] == None){
+            localNotesPressed[6] = current_note;
+          } else if (localNotesPressed[7] == None){
+            localNotesPressed[7] = current_note;
+          } else if (localNotesPressed[8] == None){
+            localNotesPressed[8] = current_note;
+          } else if (localNotesPressed[9] == None){
+            localNotesPressed[9] = current_note;
+          } */ else {
+            //ignore for now
+          }
+        }
+        current_note = None;
+      }
+
+      func(localNotesPressed);
+
+      //func(localNotesPressed[0], localNotesPressed[1]);
+      // __atomic_store_n(&localNotesPressed,notesPressed,__ATOMIC_RELAXED);
+      /*
       if(C)  {func((notes)0);}
       if(Cs) {func((notes)1);}
       if(D)  {func((notes)2);}
@@ -129,30 +182,65 @@ void findKeywithFunc(void (*func)(notes)) {
       if(!C && !Cs && !D && !Ds && !E && !F && !Fs && !G && !Gs && !A && !As && !B) {
               func((notes)12);
       }
+      */
 }
 
-void setStepSize(notes note) {
-      int32_t localCurrentStepSize = 0;
-      switch(note){
-        case None:
-          break;
-        default:
-          localCurrentStepSize = stepSizes[note];
-          break;
+void setStepSize(notes* note_list) {
+
+      for (int i=0; i<n; i++) {
+        if (note_list[i] != None) {
+          currentStepSize[i] = stepSizes[note_list[i]];
+          currentAverage[i] = averages[note_list[i]];
+        } else {
+          currentStepSize[i] = 0; //TODO: fix this. this is time consuming
+          currentAverage[i] = 0;
+        }
       }
-      __atomic_store_n(&currentStepSize,localCurrentStepSize,__ATOMIC_RELAXED);
+
+      // Serial.print("Set step size with" + String(note_1) + " and " + String(note_2));
+      /*
+      int32_t localCurrentStepSize_1 = 0;
+      int32_t localCurrentStepSize_2 = 0;
+      int32_t localCurrentAverage_1 = 0;
+      int32_t localCurrentAverage_2 = 0;
+
+      if (note_1 != None) {
+        localCurrentStepSize_1 = stepSizes[note_1];
+        localCurrentAverage_1 = averages[note_1];
+      } 
+      if (note_2 != None) {
+        localCurrentStepSize_2 = stepSizes[note_2];   
+        localCurrentAverage_2 = averages[note_2];    
+      }
+      __atomic_store_n(&currentStepSize_1,localCurrentStepSize_1,__ATOMIC_RELAXED);
+      __atomic_store_n(&currentStepSize_2,localCurrentStepSize_2,__ATOMIC_RELAXED);
+      __atomic_store_n(&currentAverage_1,localCurrentAverage_1,__ATOMIC_RELAXED);
+      __atomic_store_n(&currentAverage_2,localCurrentAverage_2,__ATOMIC_RELAXED);
+      */
 }
 
-void setNoteName(notes note) {
-      String keyString = "";
-      switch(note){
-        case None:
-          keyString = "Nothing";
-          break;
-        default:
-          keyString = noteNames[note];
-          break;
+void setNoteName(notes* note_list) {
+
+      // Serial.print("Set note name with" + String(note_1) + " and " + String(note_2));
+      String keyString;
+      for (int i=0; i<n; i++) {
+        if (note_list[i] != None) {
+          keyString += noteNames[note_list[i]];
+        }
       }
+
+      /*
+      String keyString_1 = "Nothing";
+      String keyString_2 = "Nothing";
+      if (note_1 != None) {
+        keyString_1 = noteNames[note_1];
+      } 
+      
+      if (note_2 != None) {
+        keyString_2 = noteNames[note_2]; 
+      }
+      */
+
       u8g2.clearBuffer();         // clear the internal memory
       u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
 
@@ -169,6 +257,8 @@ void setNoteName(notes note) {
       xSemaphoreGive(keyArrayMutex);
 
       // Piano note
+      //u8g2.drawStr(2,30, keyString_1.c_str());
+      //u8g2.drawStr(52,30, keyString_2.c_str());
       u8g2.drawStr(2,30, keyString.c_str());
 
       // Right hand knob
@@ -213,7 +303,7 @@ void scanKeysTask(void * pvParameters) {
 
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
-    int32_t localCurrentStepSize = 0;
+    int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
 
     for (int i = 0; i < 4; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
@@ -261,10 +351,85 @@ void displayUpdateTask(void * pvParameters){
 }
 
 void sampleISR(){
-  static int32_t phaseAcc = 0;
-  phaseAcc += currentStepSize;
+  static int32_t phaseAcc[n] = {0,0,0,0};
+  static int32_t phaseAcc_DC[n] = {0,0,0,0};
 
-  int32_t Vout = phaseAcc >> 24;
+  static int32_t phaseAcc_0 = 0; phaseAcc_0 += currentStepSize[0];
+  static int32_t phaseAcc_1 = 0; phaseAcc_1 += currentStepSize[1];
+  static int32_t phaseAcc_2 = 0; phaseAcc_2 += currentStepSize[2];
+  static int32_t phaseAcc_3 = 0; phaseAcc_3 += currentStepSize[3];
+  // static int32_t phaseAcc_4 = 0; phaseAcc_4 += currentStepSize[4];
+  // static int32_t phaseAcc_5 = 0; phaseAcc_5 += currentStepSize[5];
+  // static int32_t phaseAcc_6 = 0; phaseAcc_6 += currentStepSize[6];
+  // static int32_t phaseAcc_7 = 0; phaseAcc_7 += currentStepSize[7];
+  // static int32_t phaseAcc_8 = 0; phaseAcc_8 += currentStepSize[8];
+  // static int32_t phaseAcc_9 = 0; phaseAcc_9 += currentStepSize[9];
+
+  static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0 - currentAverage[0];
+  static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1 - currentAverage[1];
+  static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2 - currentAverage[2];
+  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3 - currentAverage[3];
+  // static int32_t phaseAcc_DC_4 = 0; phaseAcc_DC_2 = phaseAcc_4 - currentAverage[4];
+  // static int32_t phaseAcc_DC_5 = 0; phaseAcc_DC_2 = phaseAcc_5 - currentAverage[5];
+  // static int32_t phaseAcc_DC_6 = 0; phaseAcc_DC_2 = phaseAcc_6 - currentAverage[6];
+  // static int32_t phaseAcc_DC_7 = 0; phaseAcc_DC_2 = phaseAcc_7 - currentAverage[7];
+  // static int32_t phaseAcc_DC_8 = 0; phaseAcc_DC_2 = phaseAcc_8 - currentAverage[8];
+  // static int32_t phaseAcc_DC_9 = 0; phaseAcc_DC_2 = phaseAcc_9 - currentAverage[9];
+
+  static int32_t phaseAcc_final = 0;
+
+  if (phaseAcc_0 > phaseAcc_1 && phaseAcc_0 > phaseAcc_2 && phaseAcc_0 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_0;
+  } else if (phaseAcc_1 > phaseAcc_0 && phaseAcc_1 > phaseAcc_2 && phaseAcc_1 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_1;
+  } else if (phaseAcc_2 > phaseAcc_1 && phaseAcc_2 > phaseAcc_0 && phaseAcc_2 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_2;
+  } else {
+    phaseAcc_final = phaseAcc_3;
+  } 
+
+  /* if (phaseAcc_DC_0 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_0;
+  }
+  if (phaseAcc_DC_1 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_1;
+  }
+  if (phaseAcc_DC_2 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_2;
+  }
+  if (phaseAcc_DC_3 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_3;
+  }*/
+  
+  /*else if (phaseAcc_DC_4 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_4;
+  }else if (phaseAcc_DC_5 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_5;
+  }else if (phaseAcc_DC_6 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_6;
+  }else if (phaseAcc_DC_7 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_7;
+  }else if (phaseAcc_DC_8 > phaseAcc_final) {
+    phaseAcc_final = phaseAcc_DC_8;
+  }else {
+    phaseAcc_final = phaseAcc_DC_9;
+  }*/
+
+  /*
+  for (int i=0; i<n; i++) {
+    phaseAcc[i] += currentStepSize[i];
+    phaseAcc_DC[i] = phaseAcc[i] - currentAverage[i];
+  }
+
+  static int32_t phaseAcc_final = 0;
+  for (int i=0; i<n; i++) {
+    if (phaseAcc_DC[i] > phaseAcc_final) {
+      phaseAcc_final = phaseAcc_DC[i];
+    }
+  }
+  */
+
+  int32_t Vout = phaseAcc_final >> 24;
   Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
 
   analogWrite(OUTR_PIN, Vout+128);
@@ -327,7 +492,8 @@ void setup() {
   xTaskCreate(
     scanKeysTask,/* Function that implements the task */
     "scanKeys",/* Text name for the task */
-    64,      /* Stack size in words, not bytes*/
+    256,
+    // 64,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
     &scanKeysHandle
