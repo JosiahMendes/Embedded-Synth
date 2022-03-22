@@ -314,8 +314,8 @@ void sampleISR(){
     xSemaphoreGive(stepSizeMutex);
   }  
 
-  static int32_t phaseAcc[n] = {0,0,0,0};
-  static int32_t phaseAcc_DC[n] = {0,0,0,0};  
+  //static int32_t phaseAcc[n] = {0,0,0,0};
+  //static int32_t phaseAcc_DC[n] = {0,0,0,0};  
 
   static int32_t phaseAcc_0 = 0; phaseAcc_0 += localCurrentStepSize[0];
   static int32_t phaseAcc_1 = 0; phaseAcc_1 += localCurrentStepSize[1];
@@ -429,7 +429,7 @@ void setup() {
   xTaskCreate(
     scanKeysTask,/* Function that implements the task */
     "scanKeys",/* Text name for the task */
-    256,
+    512,
     // 64,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
@@ -441,7 +441,7 @@ void setup() {
   xTaskCreate(
     displayUpdateTask,/* Function that implements the task */
     "displayUpdate",/* Text name for the task */
-    256,      /* Stack size in words, not bytes*/
+    512,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
     &displayHandle
