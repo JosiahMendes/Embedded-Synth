@@ -312,10 +312,10 @@ void sampleISR(){
 
   if (knob0.get_rotation() == 0) {
     // Sawtooth
-    phaseAcc_0_sel = phaseAcc_0;
-    phaseAcc_1_sel = phaseAcc_1;
-    phaseAcc_2_sel = phaseAcc_2;
-    phaseAcc_3_sel = phaseAcc_3;
+    phaseAcc_0_sel = phaseAcc_0 - currentAverage[0];
+    phaseAcc_1_sel = phaseAcc_1 - currentAverage[1];
+    phaseAcc_2_sel = phaseAcc_2 - currentAverage[2];
+    phaseAcc_3_sel = phaseAcc_3 - currentAverage[3];
   } else if (knob0.get_rotation() == 1) {
     // Square
     if (phaseAcc_0 > int32_max/2) {
@@ -364,27 +364,16 @@ void sampleISR(){
     // Sine
   }
 
-  static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0_sel - currentAverage[0];
-  static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1_sel - currentAverage[1];
-  static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2_sel - currentAverage[2];
-  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3_sel - currentAverage[3];
-  static int32_t phaseAcc_DC_4 = 0; phaseAcc_DC_2 = phaseAcc_4 - currentAverage[4];
-  static int32_t phaseAcc_DC_5 = 0; phaseAcc_DC_2 = phaseAcc_5 - currentAverage[5];
-  static int32_t phaseAcc_DC_6 = 0; phaseAcc_DC_2 = phaseAcc_6 - currentAverage[6];
-  static int32_t phaseAcc_DC_7 = 0; phaseAcc_DC_2 = phaseAcc_7 - currentAverage[7];
-  static int32_t phaseAcc_DC_8 = 0; phaseAcc_DC_2 = phaseAcc_8 - currentAverage[8];
-  static int32_t phaseAcc_DC_9 = 0; phaseAcc_DC_2 = phaseAcc_9 - currentAverage[9];
-
   static int32_t phaseAcc_final = 0;
 
-  if (phaseAcc_0 > phaseAcc_1 && phaseAcc_0 > phaseAcc_2 && phaseAcc_0 > phaseAcc_3) {
-    phaseAcc_final = phaseAcc_0;
-  } else if (phaseAcc_1 > phaseAcc_0 && phaseAcc_1 > phaseAcc_2 && phaseAcc_1 > phaseAcc_3) {
-    phaseAcc_final = phaseAcc_1;
-  } else if (phaseAcc_2 > phaseAcc_1 && phaseAcc_2 > phaseAcc_0 && phaseAcc_2 > phaseAcc_3) {
-    phaseAcc_final = phaseAcc_2;
+  if (phaseAcc_0_sel > phaseAcc_1_sel && phaseAcc_0_sel > phaseAcc_2_sel && phaseAcc_0_sel > phaseAcc_3_sel) {
+    phaseAcc_final = phaseAcc_0_sel;
+  } else if (phaseAcc_1_sel > phaseAcc_0_sel && phaseAcc_1_sel > phaseAcc_2_sel && phaseAcc_1_sel > phaseAcc_3_sel) {
+    phaseAcc_final = phaseAcc_1_sel;
+  } else if (phaseAcc_2_sel > phaseAcc_1_sel && phaseAcc_2_sel > phaseAcc_0_sel && phaseAcc_2_sel > phaseAcc_3_sel) {
+    phaseAcc_final = phaseAcc_2_sel;
   } else {
-    phaseAcc_final = phaseAcc_3;
+    phaseAcc_final = phaseAcc_3_sel;
   } 
 
   /*
