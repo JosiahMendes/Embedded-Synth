@@ -53,10 +53,12 @@ const int HKOE_BIT = 6;
 
 const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
 const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	1061711081,	1056367844,	1047042225,	1071042264,	1053813723,	1030792152,	1046317902,	1060317060};
+const int32_t sine_factor [] = {258610,	230395,	205259,	182865,	162914,	145140,	129305,	115198,	102629,	91432,	81457,	72570};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 
 SemaphoreHandle_t keyArrayMutex;
+SemaphoreHandle_t stepSizeMutex;
 
 const int32_t int32_max = 2147483647;
 const uint8_t n = 4;
@@ -64,7 +66,7 @@ volatile int32_t currentStepSize[n];
 volatile int32_t currentAverage[n];
 
 // Knob
-Knob knob0(3, 0, 0);
+Knob knob0(7, 0, 0);
 Knob knob1(16, 0, 1);
 Knob knob2(16, 0, 2);
 Knob knob3(16, 0, 3);
@@ -198,11 +200,8 @@ void setNoteName(notes* note_list) {
       u8g2.clearBuffer();         // clear the internal memory
       u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
 
-      // Dumb line
-      u8g2.drawStr(2,10,"Not a real piano!");  // write something to the internal memory
-
       // Key array matrix
-      u8g2.setCursor(2,20);
+      u8g2.setCursor(2,10);
       xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
       u8g2.print(keyArray[0], HEX);
       u8g2.print(keyArray[1], HEX);
@@ -211,18 +210,31 @@ void setNoteName(notes* note_list) {
       xSemaphoreGive(keyArrayMutex);
 
       // Piano note
-      u8g2.drawStr(2,30, keyString.c_str());
+      u8g2.drawStr(72,10, keyString.c_str());
 
       // Right hand knob
-      u8g2.setCursor(50,20);
+      u8g2.setCursor(2,20);
       u8g2.print(knob0.get_rotation(), DEC);
-      u8g2.setCursor(65,20);
+      u8g2.setCursor(37,20);
       u8g2.print(knob1.get_rotation(), DEC);
-      u8g2.setCursor(80,20);
+      u8g2.setCursor(72,20);
       u8g2.print(knob2.get_rotation(), DEC);
-      u8g2.setCursor(95,20);
+      u8g2.setCursor(107,20);
       u8g2.print(knob3.get_rotation(), DEC);
 
+      if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) {
+        u8g2.drawStr(2,30,"Saw");
+      } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) {
+        u8g2.drawStr(2,30,"Sqa");
+      } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) {
+        u8g2.drawStr(2,30,"Tri");
+      } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
+        u8g2.drawStr(2,30,"Sine");
+      }
+
+      u8g2.drawStr(37, 30,"-");
+      u8g2.drawStr(72, 30,"-");
+      u8g2.drawStr(107, 30,"Vol");
       // transfer internal memory to the display
       u8g2.sendBuffer();          
 }
@@ -275,32 +287,34 @@ void displayUpdateTask(void * pvParameters){
 }
 
 void sampleISR(){
-  static int32_t phaseAcc[n] = {0,0,0,0};
-  static int32_t phaseAcc_DC[n] = {0,0,0,0};
+  //static int32_t phaseAcc[n] = {0,0,0,0};
+  //static int32_t phaseAcc_DC[n] = {0,0,0,0};
 
-  static int32_t phaseAcc_0 = 0; phaseAcc_0 += currentStepSize[0];
-  static int32_t phaseAcc_1 = 0; phaseAcc_1 += currentStepSize[1];
-  static int32_t phaseAcc_2 = 0; phaseAcc_2 += currentStepSize[2];
-  static int32_t phaseAcc_3 = 0; phaseAcc_3 += currentStepSize[3];
-  // static int32_t phaseAcc_4 = 0; phaseAcc_4 += currentStepSize[4];
-  // static int32_t phaseAcc_5 = 0; phaseAcc_5 += currentStepSize[5];
-  // static int32_t phaseAcc_6 = 0; phaseAcc_6 += currentStepSize[6];
-  // static int32_t phaseAcc_7 = 0; phaseAcc_7 += currentStepSize[7];
-  // static int32_t phaseAcc_8 = 0; phaseAcc_8 += currentStepSize[8];
-  // static int32_t phaseAcc_9 = 0; phaseAcc_9 += currentStepSize[9];
+  int32_t localCurrentStepSize[n];
+  int32_t localCurrentAverage[n];
+
+  for (int i=0; i<n; i++) {
+    localCurrentStepSize[i] = currentStepSize[i];
+    localCurrentAverage[i] = currentAverage[i];
+  }
+
+  static int32_t phaseAcc_0 = 0; phaseAcc_0 += localCurrentStepSize[0];
+  static int32_t phaseAcc_1 = 0; phaseAcc_1 += localCurrentStepSize[1];
+  static int32_t phaseAcc_2 = 0; phaseAcc_2 += localCurrentStepSize[2];
+  static int32_t phaseAcc_3 = 0; phaseAcc_3 += localCurrentStepSize[3];
 
   static int32_t phaseAcc_0_sel = 0;
   static int32_t phaseAcc_1_sel = 0;
   static int32_t phaseAcc_2_sel = 0;
   static int32_t phaseAcc_3_sel = 0;
 
-  if (knob0.get_rotation() == 0) {
+  if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) {
     // Sawtooth: Deduct by DC for polyphony
     phaseAcc_0_sel = phaseAcc_0 - currentAverage[0];
     phaseAcc_1_sel = phaseAcc_1 - currentAverage[1];
     phaseAcc_2_sel = phaseAcc_2 - currentAverage[2];
     phaseAcc_3_sel = phaseAcc_3 - currentAverage[3];
-  } else if (knob0.get_rotation() == 1) {
+  } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) {
     // Square
     if (phaseAcc_0 > int32_max/2) {
       phaseAcc_0_sel = int32_max;
@@ -322,30 +336,34 @@ void sampleISR(){
     } else {
       phaseAcc_3_sel = 0;
     }
-  } else if (knob0.get_rotation() == 2) {
+  } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) {
     // Triangle
     if (phaseAcc_0 > int32_max/2) {
-      phaseAcc_0_sel = (-1 + (phaseAcc_0/int32_max - 0.5)*4)*int32_max;
+      phaseAcc_0_sel = -3*int32_max + phaseAcc_0*4;
     } else {
-      phaseAcc_0_sel = (1 - (phaseAcc_0/int32_max)*4)*int32_max;
+      phaseAcc_0_sel = int32_max - phaseAcc_0*4;
     }
     if (phaseAcc_1 > int32_max/2) {
-      phaseAcc_1_sel = (-1 + (phaseAcc_1/int32_max - 0.5)*4)*int32_max;
+      phaseAcc_1_sel = -3*int32_max + phaseAcc_1*4;
     } else {
-      phaseAcc_1_sel = (1 - (phaseAcc_1/int32_max)*4)*int32_max;
+      phaseAcc_1_sel = int32_max - phaseAcc_1*4;
     }
     if (phaseAcc_2 > int32_max/2) {
-      phaseAcc_2_sel = (-1 + (phaseAcc_2/int32_max - 0.5)*4)*int32_max;
+      phaseAcc_2_sel = -3*int32_max + phaseAcc_2*4;
     } else {
-      phaseAcc_2_sel = (1 - (phaseAcc_2/int32_max)*4)*int32_max;
+      phaseAcc_2_sel = int32_max - phaseAcc_2*4;
     }
     if (phaseAcc_3 > int32_max/2) {
-      phaseAcc_3_sel = (-1 + (phaseAcc_3/int32_max - 0.5)*4)*int32_max;
+      phaseAcc_3_sel = -3*int32_max + phaseAcc_3*4;
     } else {
-      phaseAcc_3_sel = (1 - (phaseAcc_3/int32_max)*4)*int32_max;
+      phaseAcc_3_sel = int32_max - phaseAcc_3*4;
     }
-  } else if (knob0.get_rotation() == 3) {
+  } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
     // Sine
+    phaseAcc_0_sel = int32_max*sin(phaseAcc_0/sine_factor[0]/1000000);
+    phaseAcc_1_sel = int32_max*sin(phaseAcc_1/sine_factor[1]/1000000);
+    phaseAcc_2_sel = int32_max*sin(phaseAcc_2/sine_factor[2]/1000000);
+    phaseAcc_3_sel = int32_max*sin(phaseAcc_3/sine_factor[3]/1000000);
   }
 
   static int32_t phaseAcc_final = 0;

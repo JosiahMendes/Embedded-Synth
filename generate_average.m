@@ -1,5 +1,6 @@
 clear all; clc; clf; close all;
 
+int32_max = 2147483647;
 stepSizes = [51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756];
 length = size(stepSizes,2);
 %%
@@ -23,3 +24,7 @@ for j=1:length
     
     averages(1,j) = y_mean;
 end
+
+%%
+
+sine_f = pi.*int32_max./stepSizes./stepSizes;

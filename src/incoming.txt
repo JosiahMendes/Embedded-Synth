@@ -1,0 +1,63 @@
+int32_t localCurrentStepSize[n];
+  int32_t localCurrentAverage[n];
+
+  for (int i=0; i<n; i++) {
+    xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+    localCurrentStepSize[i] = currentStepSize[i];
+    localCurrentAverage[i] = currentAverage[i];
+    xSemaphoreGive(stepSizeMutex);
+  }  
+
+  //static int32_t phaseAcc[n] = {0,0,0,0};
+  //static int32_t phaseAcc_DC[n] = {0,0,0,0};  
+
+  static int32_t phaseAcc_0 = 0; phaseAcc_0 += localCurrentStepSize[0];
+  static int32_t phaseAcc_1 = 0; phaseAcc_1 += localCurrentStepSize[1];
+  static int32_t phaseAcc_2 = 0; phaseAcc_2 += localCurrentStepSize[2];
+  static int32_t phaseAcc_3 = 0; phaseAcc_3 += localCurrentStepSize[3];
+  // static int32_t phaseAcc_4 = 0; phaseAcc_4 += currentStepSize[4];
+  // static int32_t phaseAcc_5 = 0; phaseAcc_5 += currentStepSize[5];
+  // static int32_t phaseAcc_6 = 0; phaseAcc_6 += currentStepSize[6];
+  // static int32_t phaseAcc_7 = 0; phaseAcc_7 += currentStepSize[7];
+  // static int32_t phaseAcc_8 = 0; phaseAcc_8 += currentStepSize[8];
+  // static int32_t phaseAcc_9 = 0; phaseAcc_9 += currentStepSize[9];
+
+  static int32_t phaseAcc_DC_0 = 0; phaseAcc_DC_0 = phaseAcc_0 - localCurrentAverage[0];
+  static int32_t phaseAcc_DC_1 = 0; phaseAcc_DC_1 = phaseAcc_1 - localCurrentAverage[1];
+  static int32_t phaseAcc_DC_2 = 0; phaseAcc_DC_2 = phaseAcc_2 - localCurrentAverage[2];
+  static int32_t phaseAcc_DC_3 = 0; phaseAcc_DC_2 = phaseAcc_3 - localCurrentAverage[3];
+  // static int32_t phaseAcc_DC_4 = 0; phaseAcc_DC_2 = phaseAcc_4 - currentAverage[4];
+  // static int32_t phaseAcc_DC_5 = 0; phaseAcc_DC_2 = phaseAcc_5 - currentAverage[5];
+  // static int32_t phaseAcc_DC_6 = 0; phaseAcc_DC_2 = phaseAcc_6 - currentAverage[6];
+  // static int32_t phaseAcc_DC_7 = 0; phaseAcc_DC_2 = phaseAcc_7 - currentAverage[7];
+  // static int32_t phaseAcc_DC_8 = 0; phaseAcc_DC_2 = phaseAcc_8 - currentAverage[8];
+  // static int32_t phaseAcc_DC_9 = 0; phaseAcc_DC_2 = phaseAcc_9 - currentAverage[9];
+
+  static int32_t phaseAcc_final = 0;
+
+  if (phaseAcc_0 > phaseAcc_1 && phaseAcc_0 > phaseAcc_2 && phaseAcc_0 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_0;
+  } else if (phaseAcc_1 > phaseAcc_0 && phaseAcc_1 > phaseAcc_2 && phaseAcc_1 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_1;
+  } else if (phaseAcc_2 > phaseAcc_1 && phaseAcc_2 > phaseAcc_0 && phaseAcc_2 > phaseAcc_3) {
+    phaseAcc_final = phaseAcc_2;
+  } else {
+    phaseAcc_final = phaseAcc_3;
+  } 
+
+  /*
+  for (int i=0; i<n; i++) {
+    phaseAcc[i] += currentStepSize[i];
+    phaseAcc_DC[i] = phaseAcc[i] - currentAverage[i];
+  }
+
+  static int32_t phaseAcc_final = 0;
+  for (int i=0; i<n; i++) {
+    if (phaseAcc_DC[i] > phaseAcc_final) {
+      phaseAcc_final = phaseAcc_DC[i];
+    }
+  }
+  */
+
+  int32_t Vout = phaseAcc_final >> 24;
+  Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
