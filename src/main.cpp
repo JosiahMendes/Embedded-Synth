@@ -311,7 +311,7 @@ void sampleISR(){
   static int32_t phaseAcc_3_sel = 0;
 
   if (knob0.get_rotation() == 0) {
-    // Sawtooth
+    // Sawtooth: Deduct by DC for polyphony
     phaseAcc_0_sel = phaseAcc_0 - currentAverage[0];
     phaseAcc_1_sel = phaseAcc_1 - currentAverage[1];
     phaseAcc_2_sel = phaseAcc_2 - currentAverage[2];
@@ -319,46 +319,46 @@ void sampleISR(){
   } else if (knob0.get_rotation() == 1) {
     // Square
     if (phaseAcc_0 > int32_max/2) {
-      phaseAcc_0_sel = 1;
+      phaseAcc_0_sel = int32_max;
     } else {
       phaseAcc_0_sel = 0;
     }
     if (phaseAcc_1 > int32_max/2) {
-      phaseAcc_1_sel = 1;
+      phaseAcc_1_sel = int32_max;
     } else {
       phaseAcc_1_sel = 0;
     }
     if (phaseAcc_2 > int32_max/2) {
-      phaseAcc_2_sel = 1;
+      phaseAcc_2_sel = int32_max;
     } else {
       phaseAcc_2_sel = 0;
     }
     if (phaseAcc_3 > int32_max/2) {
-      phaseAcc_3_sel = 1;
+      phaseAcc_3_sel = int32_max;
     } else {
       phaseAcc_3_sel = 0;
     }
   } else if (knob0.get_rotation() == 2) {
     // Triangle
     if (phaseAcc_0 > int32_max/2) {
-      phaseAcc_0_sel = -1 + (phaseAcc_0/int32_max - 0.5)*4;
+      phaseAcc_0_sel = (-1 + (phaseAcc_0/int32_max - 0.5)*4)*int32_max;
     } else {
-      phaseAcc_0_sel = 1 - (phaseAcc_0/int32_max)*4;;
+      phaseAcc_0_sel = (1 - (phaseAcc_0/int32_max)*4)*int32_max;
     }
     if (phaseAcc_1 > int32_max/2) {
-      phaseAcc_1_sel = -1 + (phaseAcc_1/int32_max - 0.5)*4;
+      phaseAcc_1_sel = (-1 + (phaseAcc_1/int32_max - 0.5)*4)*int32_max;
     } else {
-      phaseAcc_1_sel = 1 - (phaseAcc_1/int32_max)*4;;
+      phaseAcc_1_sel = (1 - (phaseAcc_1/int32_max)*4)*int32_max;
     }
     if (phaseAcc_2 > int32_max/2) {
-      phaseAcc_2_sel = -1 + (phaseAcc_2/int32_max - 0.5)*4;
+      phaseAcc_2_sel = (-1 + (phaseAcc_2/int32_max - 0.5)*4)*int32_max;
     } else {
-      phaseAcc_2_sel = 1 - (phaseAcc_2/int32_max)*4;;
+      phaseAcc_2_sel = (1 - (phaseAcc_2/int32_max)*4)*int32_max;
     }
     if (phaseAcc_3 > int32_max/2) {
-      phaseAcc_3_sel = -1 + (phaseAcc_3/int32_max - 0.5)*4;
+      phaseAcc_3_sel = (-1 + (phaseAcc_3/int32_max - 0.5)*4)*int32_max;
     } else {
-      phaseAcc_3_sel = 1 - (phaseAcc_3/int32_max)*4;;
+      phaseAcc_3_sel = (1 - (phaseAcc_3/int32_max)*4)*int32_max;
     }
   } else if (knob0.get_rotation() == 3) {
     // Sine
