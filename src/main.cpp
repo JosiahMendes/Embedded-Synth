@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include<string.h>
 #include <STM32FreeRTOS.h>
+#include "Knob.h"
 
 enum notes {
   C  = 0,
@@ -67,10 +68,10 @@ volatile int32_t currentStepSize[n];
 volatile int32_t currentAverage[n];
 
 // Knob
-volatile uint8_t prev_Knob = 0;
-volatile uint8_t current_Knob = 0;
-volatile int8_t rotation_increment = 0; // can be negative
-volatile int8_t knob3_rotation_variable = 0; // from 0 to 16
+Knob knob0(16, 0, 0);
+Knob knob1(16, 0, 1);
+Knob knob2(16, 0, 2);
+Knob knob3(16, 0, 3);
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
@@ -196,27 +197,6 @@ void setStepSize(notes* note_list) {
           currentAverage[i] = 0;
         }
       }
-
-      // Serial.print("Set step size with" + String(note_1) + " and " + String(note_2));
-      /*
-      int32_t localCurrentStepSize_1 = 0;
-      int32_t localCurrentStepSize_2 = 0;
-      int32_t localCurrentAverage_1 = 0;
-      int32_t localCurrentAverage_2 = 0;
-
-      if (note_1 != None) {
-        localCurrentStepSize_1 = stepSizes[note_1];
-        localCurrentAverage_1 = averages[note_1];
-      } 
-      if (note_2 != None) {
-        localCurrentStepSize_2 = stepSizes[note_2];   
-        localCurrentAverage_2 = averages[note_2];    
-      }
-      __atomic_store_n(&currentStepSize_1,localCurrentStepSize_1,__ATOMIC_RELAXED);
-      __atomic_store_n(&currentStepSize_2,localCurrentStepSize_2,__ATOMIC_RELAXED);
-      __atomic_store_n(&currentAverage_1,localCurrentAverage_1,__ATOMIC_RELAXED);
-      __atomic_store_n(&currentAverage_2,localCurrentAverage_2,__ATOMIC_RELAXED);
-      */
 }
 
 void setNoteName(notes* note_list) {
@@ -228,18 +208,6 @@ void setNoteName(notes* note_list) {
           keyString += noteNames[note_list[i]];
         }
       }
-
-      /*
-      String keyString_1 = "Nothing";
-      String keyString_2 = "Nothing";
-      if (note_1 != None) {
-        keyString_1 = noteNames[note_1];
-      } 
-      
-      if (note_2 != None) {
-        keyString_2 = noteNames[note_2]; 
-      }
-      */
 
       u8g2.clearBuffer();         // clear the internal memory
       u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
@@ -257,44 +225,20 @@ void setNoteName(notes* note_list) {
       xSemaphoreGive(keyArrayMutex);
 
       // Piano note
-      //u8g2.drawStr(2,30, keyString_1.c_str());
-      //u8g2.drawStr(52,30, keyString_2.c_str());
       u8g2.drawStr(2,30, keyString.c_str());
 
       // Right hand knob
-      u8g2.setCursor(52,20);
-      u8g2.print(rotation_increment, DEC);
-      u8g2.setCursor(67,20);
-      u8g2.print(knob3_rotation_variable, DEC);
+      u8g2.setCursor(50,20);
+      u8g2.print(knob0.get_rotation(), DEC);
+      u8g2.setCursor(65,20);
+      u8g2.print(knob1.get_rotation(), DEC);
+      u8g2.setCursor(80,20);
+      u8g2.print(knob2.get_rotation(), DEC);
+      u8g2.setCursor(95,20);
+      u8g2.print(knob3.get_rotation(), DEC);
 
       // transfer internal memory to the display
       u8g2.sendBuffer();          
-}
-
-void readKnob(uint8_t prev, uint8_t current) {
-  bool b0 = (prev >> 1) & B1;
-  bool a0 = (prev >> 0) & B1;
-  bool b1 = (current >> 1) & B1;
-  bool a1 = (current >> 0) & B1;
-
-  if (b0 == b1 && a1 == a0) {
-    // no change 00->00, 01->01, 10->10, 11->11
-    rotation_increment = 0;
-  } else if (b0 != b1 &&  a1 != a0) {
-    // impossible transition: 00->11, 01->10, 10->01, 11->00
-    //  q6a: interpret impossible transitions by assuming impossible transition is same as last legal transition: so increase or decrease by 2
-    if (rotation_increment == 1 || rotation_increment == 2) {
-      rotation_increment = 2;
-    } else if (rotation_increment == -1 || rotation_increment == -2) {
-      rotation_increment = -2;
-    }
-  } else if (prev == 0 && current == 1 || prev == 1 && current == 3 || prev == 2 && current == 0 || prev == 3 && current == 2) {
-    // +1: 00->01, 01->11, 10->00, 11->10
-    rotation_increment = 1;
-  } else if (prev == 0 && current == 2 || prev == 1 && current == 0 || prev == 2 && current == 3 || prev == 3 && current == 1) {
-    // -1: 00->10, 01->00, 10->11, 11->01
-    rotation_increment = -1;
-  }
 }
 
 void scanKeysTask(void * pvParameters) {
@@ -305,7 +249,7 @@ void scanKeysTask(void * pvParameters) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
     int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
 
-    for (int i = 0; i < 4; i++) { //expanded to read row 3, which is for the right hand knob
+    for (int i = 0; i < 7; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
         delayMicroseconds(2);
         xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
@@ -318,20 +262,15 @@ void scanKeysTask(void * pvParameters) {
     // Find rotation of knob
     // TODO: protected with a key array mutex?
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
-    current_Knob = keyArray[3];
+    knob3.read(keyArray[3]);
+    knob2.read(keyArray[3]);
+    knob1.read(keyArray[4]);
+    knob0.read(keyArray[4]);
     xSemaphoreGive(keyArrayMutex);
-    readKnob(prev_Knob, current_Knob);
-
-    int8_t local_knob3_rotation_variable ;
-    if (knob3_rotation_variable + rotation_increment > 16) {
-      local_knob3_rotation_variable = 16;
-    } else if (knob3_rotation_variable + rotation_increment < 0) {
-      local_knob3_rotation_variable = 0;
-    } else {
-      local_knob3_rotation_variable = knob3_rotation_variable + rotation_increment;
-    }
-    prev_Knob = current_Knob;
-    __atomic_store_n(&knob3_rotation_variable,local_knob3_rotation_variable,__ATOMIC_RELAXED);
+    knob3.update();
+    knob2.update();
+    knob1.update();
+    knob0.update();
   }
 }
 
@@ -388,33 +327,6 @@ void sampleISR(){
     phaseAcc_final = phaseAcc_3;
   } 
 
-  /* if (phaseAcc_DC_0 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_0;
-  }
-  if (phaseAcc_DC_1 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_1;
-  }
-  if (phaseAcc_DC_2 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_2;
-  }
-  if (phaseAcc_DC_3 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_3;
-  }*/
-  
-  /*else if (phaseAcc_DC_4 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_4;
-  }else if (phaseAcc_DC_5 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_5;
-  }else if (phaseAcc_DC_6 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_6;
-  }else if (phaseAcc_DC_7 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_7;
-  }else if (phaseAcc_DC_8 > phaseAcc_final) {
-    phaseAcc_final = phaseAcc_DC_8;
-  }else {
-    phaseAcc_final = phaseAcc_DC_9;
-  }*/
-
   /*
   for (int i=0; i<n; i++) {
     phaseAcc[i] += currentStepSize[i];
@@ -430,7 +342,7 @@ void sampleISR(){
   */
 
   int32_t Vout = phaseAcc_final >> 24;
-  Vout = Vout >> (8 - knob3_rotation_variable/2); // Volume Control
+  Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
 
   analogWrite(OUTR_PIN, Vout+128);
 }
