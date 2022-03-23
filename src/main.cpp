@@ -51,10 +51,10 @@ const int DRST_BIT = 4;
 const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
-const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
-const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	1061711081,	1056367844,	1047042225,	1071042264,	1053813723,	1030792152,	1046317902,	1060317060};
-const double sine_factor[] = {0.000002303951606, 0.000002052587542, 0.000001828647598 ,0.000001629139798 ,0.000001451398562 ,0.000001293049119 ,0.000001151975806 ,0.000001026293767 ,0.000000914323797 ,0.000000814569898 ,0.000000725699277	
-};
+// This is for 44kHz!!
+const int32_t stepSizes [] = {51076057, 54113197, 57330935, 60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346, 91007187, 96418756, };
+const int32_t sine_factor[] = {132, 125, 118, 111, 105, 99, 93, 88, 83, 79, 74, 70};
+const int32_t sine_acc[] = {42, 40, 37, 35, 33, 31, 30, 28, 26, 25, 24, 22};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 
@@ -62,9 +62,12 @@ SemaphoreHandle_t keyArrayMutex;
 SemaphoreHandle_t stepSizeMutex;
 
 const int32_t int32_max = 2147483647;
+const int32_t half_max = 1073741824;
 const uint8_t n = 4;
+
 volatile int32_t currentStepSize[n];
-volatile int32_t currentAverage[n];
+volatile int32_t currentSineFactor[n];
+volatile int32_t currentSineAcc[n];
 
 // Knob
 Knob knob0(7, 0, 0, 0);
@@ -171,19 +174,21 @@ void findKeywithFunc(void (*func)(notes*)) {
 void setStepSize(notes* note_list) {
 
       int32_t localCurrentStepSize;
-      int32_t localCurrentAverage;
+      // int32_t localCurrentSineFactor;
+      // int32_t localCurrentSineAcc;
       for (int i=0; i<n; i++) {
         if (note_list[i] != None) {
           localCurrentStepSize = stepSizes[note_list[i]];
-          localCurrentAverage = averages[note_list[i]];
+          // localCurrentSineFactor = sine_factor[note_list[i]];
+          // localCurrentSineAcc = sine_acc[note_list[i]];
           xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
           currentStepSize[i] = localCurrentStepSize;
-          currentAverage[i] = localCurrentAverage;
+          // currentSineFactor[i] = localCurrentSineFactor;
+          // currentSineAcc[i] = localCurrentSineAcc;
           xSemaphoreGive(stepSizeMutex);
         } else {
           xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
           currentStepSize[i] = 0;
-          currentAverage[i] = 0;
           xSemaphoreGive(stepSizeMutex);
         }
       }
@@ -288,141 +293,97 @@ void displayUpdateTask(void * pvParameters){
 }
 
 void sampleISR(){
-  //static int32_t phaseAcc[n] = {0,0,0,0};
-  //static int32_t phaseAcc_DC[n] = {0,0,0,0};
+  static int32_t phaseAcc[n] = {0,0,0,0};
+  static int32_t phaseAcc_sel[n] = {0,0,0,0};
 
   int32_t localCurrentStepSize[n];
-  int32_t localCurrentAverage[n];
+  // int32_t localCurrentSineFactor[n];
+  //int32_t localCurrentSineAcc[n];
 
   for (int i=0; i<n; i++) {
     localCurrentStepSize[i] = currentStepSize[i];
-    localCurrentAverage[i] = currentAverage[i];
+    phaseAcc[i] += localCurrentStepSize[i];
+    // localCurrentSineFactor[i] = currentSineFactor[i];
+    //localCurrentSineAcc[i] = currentSineAcc[i];
   }
 
-  static int32_t phaseAcc_0 = 0; phaseAcc_0 += localCurrentStepSize[0];
-  static int32_t phaseAcc_1 = 0; phaseAcc_1 += localCurrentStepSize[1];
-  static int32_t phaseAcc_2 = 0; phaseAcc_2 += localCurrentStepSize[2];
-  static int32_t phaseAcc_3 = 0; phaseAcc_3 += localCurrentStepSize[3];
+  if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) { // Sawtooth
+    for (int i=0; i<n; i++) {
+      phaseAcc_sel[i] =  phaseAcc[i];
+    }
+  } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) { // Square
+    for (int i=0; i<n; i++) {
+      if (phaseAcc[i] > half_max) {
+        phaseAcc_sel[i] = int32_max;
+      } else {
+        phaseAcc_sel[i] = 0;
+      }
+    }
+  } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) { // Triangular
+    for (int i=0; i<n; i++) {
+      if (phaseAcc[i]  > half_max) {
+        phaseAcc_sel[i]  = -3*int32_max + phaseAcc[i]*4;
+      } else {
+        phaseAcc_sel[i]  = int32_max - phaseAcc[i]*4;
+      }
+    }
 
-  static int32_t phaseAcc_0_sel = 0;
-  static int32_t phaseAcc_1_sel = 0;
-  static int32_t phaseAcc_2_sel = 0;
-  static int32_t phaseAcc_3_sel = 0;
-
-  static double phaseAcc_0_sine = 0;
-  static double phaseAcc_1_sine = 0;
-  static double phaseAcc_2_sine = 0;
-  static double phaseAcc_3_sine = 0;
-
-  if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) {
-    // Sawtooth: Deduct by DC for polyphony
-    phaseAcc_0_sel = phaseAcc_0 - currentAverage[0];
-    phaseAcc_1_sel = phaseAcc_1 - currentAverage[1];
-    phaseAcc_2_sel = phaseAcc_2 - currentAverage[2];
-    phaseAcc_3_sel = phaseAcc_3 - currentAverage[3];
-  } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) {
-    // Square
-    if (phaseAcc_0 > int32_max/2) {
-      phaseAcc_0_sel = int32_max;
-    } else {
-      phaseAcc_0_sel = 0;
-    }
-    if (phaseAcc_1 > int32_max/2) {
-      phaseAcc_1_sel = int32_max;
-    } else {
-      phaseAcc_1_sel = 0;
-    }
-    if (phaseAcc_2 > int32_max/2) {
-      phaseAcc_2_sel = int32_max;
-    } else {
-      phaseAcc_2_sel = 0;
-    }
-    if (phaseAcc_3 > int32_max/2) {
-      phaseAcc_3_sel = int32_max;
-    } else {
-      phaseAcc_3_sel = 0;
-    }
-  } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) {
-    // Triangle
-    if (phaseAcc_0 > int32_max/2) {
-      phaseAcc_0_sel = -3*int32_max + phaseAcc_0*4;
-    } else {
-      phaseAcc_0_sel = int32_max - phaseAcc_0*4;
-    }
-    if (phaseAcc_1 > int32_max/2) {
-      phaseAcc_1_sel = -3*int32_max + phaseAcc_1*4;
-    } else {
-      phaseAcc_1_sel = int32_max - phaseAcc_1*4;
-    }
-    if (phaseAcc_2 > int32_max/2) {
-      phaseAcc_2_sel = -3*int32_max + phaseAcc_2*4;
-    } else {
-      phaseAcc_2_sel = int32_max - phaseAcc_2*4;
-    }
-    if (phaseAcc_3 > int32_max/2) {
-      phaseAcc_3_sel = -3*int32_max + phaseAcc_3*4;
-    } else {
-      phaseAcc_3_sel = int32_max - phaseAcc_3*4;
-    }
   } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
-    /* Sine
-    phaseAcc_0_sine = (double)int32_max *sin(phaseAcc_0*sine_factor[0]);
-    phaseAcc_1_sine = (double)int32_max *sin(phaseAcc_1*sine_factor[1]);
-    phaseAcc_2_sine = (double)int32_max *sin(phaseAcc_2*sine_factor[2]);
-    phaseAcc_3_sine = (double)int32_max *sin(phaseAcc_3*sine_factor[3]);
-
-    static double phaseAcc_final = 0;
-    if (phaseAcc_0_sine > phaseAcc_1_sine && phaseAcc_0_sine > phaseAcc_2_sine && phaseAcc_0_sine > phaseAcc_3_sine) {
-      phaseAcc_final = phaseAcc_0_sine;
-    } else if (phaseAcc_1_sine > phaseAcc_0_sine && phaseAcc_1_sine > phaseAcc_2_sine && phaseAcc_1_sine > phaseAcc_3_sine) {
-      phaseAcc_final = phaseAcc_1_sine;
-    } else if (phaseAcc_2_sine > phaseAcc_1_sine && phaseAcc_2_sine > phaseAcc_0_sine && phaseAcc_2_sine > phaseAcc_3_sine) {
-      phaseAcc_final = phaseAcc_2_sine;
-    } else {
-      phaseAcc_final = phaseAcc_3_sine;
-    }
-
-    static int32_t phaseAcc_casted = (int32_t) phaseAcc_final;
-    int32_t Vout = phaseAcc_casted >> 24;
-    Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
-    analogWrite(OUTR_PIN, Vout+128);
-    */
-  }
-
-  if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
-    //pass
-  } else {
-    static int32_t phaseAcc_final = 0;
-
-    if (phaseAcc_0_sel > phaseAcc_1_sel && phaseAcc_0_sel > phaseAcc_2_sel && phaseAcc_0_sel > phaseAcc_3_sel) {
-      phaseAcc_final = phaseAcc_0_sel;
-    } else if (phaseAcc_1_sel > phaseAcc_0_sel && phaseAcc_1_sel > phaseAcc_2_sel && phaseAcc_1_sel > phaseAcc_3_sel) {
-      phaseAcc_final = phaseAcc_1_sel;
-    } else if (phaseAcc_2_sel > phaseAcc_1_sel && phaseAcc_2_sel > phaseAcc_0_sel && phaseAcc_2_sel > phaseAcc_3_sel) {
-      phaseAcc_final = phaseAcc_2_sel;
-    } else {
-      phaseAcc_final = phaseAcc_3_sel;
-    }
-
-    int32_t Vout = phaseAcc_final >> 24;
-    Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
-    analogWrite(OUTR_PIN, Vout+128);
-  }
-  
-
-  /*
-  for (int i=0; i<n; i++) {
-    phaseAcc[i] += currentStepSize[i];
-    phaseAcc_DC[i] = phaseAcc[i] - currentAverage[i];
   }
 
   static int32_t phaseAcc_final = 0;
-  for (int i=0; i<n; i++) {
-    if (phaseAcc_DC[i] > phaseAcc_final) {
-      phaseAcc_final = phaseAcc_DC[i];
-    }
+  if (phaseAcc_sel[0] > phaseAcc_sel[1] && phaseAcc_sel[0] > phaseAcc_sel[2] && phaseAcc_sel[0] > phaseAcc_sel[3]) {
+    phaseAcc_final = phaseAcc_sel[0];
+  } else if (phaseAcc_sel[1] > phaseAcc_sel[0] && phaseAcc_sel[1] > phaseAcc_sel[2] && phaseAcc_sel[1] > phaseAcc_sel[3]) {
+    phaseAcc_final = phaseAcc_sel[1];
+  } else if (phaseAcc_sel[2] > phaseAcc_sel[1] && phaseAcc_sel[2] > phaseAcc_sel[0] && phaseAcc_sel[2] > phaseAcc_sel[3]) {
+    phaseAcc_final = phaseAcc_sel[2];
+  } else {
+    phaseAcc_final = phaseAcc_sel[3];
   }
-  */  
+
+  int32_t Vout = phaseAcc_final >> 24;
+  Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
+  analogWrite(OUTR_PIN, Vout+128);
+
+  
+  /*
+ 
+  } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
+
+    phaseAcc_0_sel = sin(localCurrentSineFactor[0]*acc);
+    phaseAcc_1_sel = sin(localCurrentSineFactor[1]*acc);
+    phaseAcc_2_sel = sin(localCurrentSineFactor[2]*acc);
+    phaseAcc_3_sel = sin(localCurrentSineFactor[3]*acc);
+    acc += 1;
+
+    phaseAcc_0_sel = int32_max*sin(3.14*int32_max/localCurrentStepSize[0]*acc_0);
+    phaseAcc_1_sel = int32_max*sin(3.14*int32_max/localCurrentStepSize[1]*acc_1);
+    phaseAcc_2_sel = int32_max*sin(3.14*int32_max/localCurrentStepSize[2]*acc_2);
+    phaseAcc_3_sel = int32_max*sin(3.14*int32_max/localCurrentStepSize[3]*acc_3);
+    if (acc_0 >= int32_max/localCurrentStepSize[0]) {
+      acc_0 = 0;
+    } else {
+      acc_0 += 1;
+    }
+    if (acc_1 >= int32_max/localCurrentStepSize[1]) {
+      acc_1 = 0;
+    } else {
+      acc_1 += 1;
+    }
+    if (acc_2 >= int32_max/localCurrentStepSize[2]) {
+      acc_2 = 0;
+    } else {
+      acc_2 += 1;
+    }
+    if (acc_3 >= int32_max/localCurrentStepSize[3]) {
+      acc_3 = 0;
+    } else {
+      acc_3 += 1;
+    }
+
+  }
+  */
 }
 
 void setup() {
@@ -470,7 +431,7 @@ void setup() {
   //Initialise timer
   TIM_TypeDef *Instance = TIM1;
   HardwareTimer *sampleTimer= new HardwareTimer(Instance);
-  sampleTimer->setOverflow(22000, HERTZ_FORMAT);
+  sampleTimer->setOverflow(44000, HERTZ_FORMAT);
   sampleTimer->attachInterrupt(sampleISR);
   sampleTimer->resume();
 

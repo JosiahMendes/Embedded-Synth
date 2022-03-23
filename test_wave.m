@@ -1,8 +1,8 @@
 clear all; clc; clf; close all;
 
 Fs = 44000;
-step_Size_1 = 51076057;
-step_Size_2 = 64351799;
+step_Size_1 = 51076057; %C5
+step_Size_2 = 64351799; %E5
 
 n = 10000;
 
@@ -36,8 +36,9 @@ for i=1:size(y1,1)
     end
     y1_sine(i,1) = sin(pi*freq_1*i);
 end
-y_1_mean = mean(y1,1:Fs);
-y1_AC = y1 - y_1_mean;
+y1_mean = mean(y1,1:Fs);
+y1_AC = y1 - y1_mean;
+y1_mean = y1_mean.*ones(1,n);
 
 %% Generate E Sawtooth and square
 y2 = zeros(n,1);
@@ -66,6 +67,7 @@ for i=1:size(y2,1)
 end
 y2_mean = mean(y2,1:Fs);
 y2_AC = y2 - y2_mean;
+y2_mean = y2_mean.*ones(1,n);
 
 %% Polyphony
 y  = max(y1_AC,y2_AC);
@@ -84,13 +86,14 @@ y_sine = y1_sine + y2_sine;
 
 %%
 figure(1); clf;
-plot(y2/int32_max); hold on;
-plot(y2_square); hold on;
-plot(y2_triangle); hold on;
-plot(y2_sine); hold on;
+plot(y1/int32_max); hold on;
+plot(y1_square); hold on;
+plot(y1_triangle); hold on;
+plot(y1_sine); hold on;
+plot(y1_mean/int32_max, 'linewidth',2);
 % plot(y_sine, 'linewidth',2);
-legend("sawtooth","square","triangle","sine");
-xlim([0 100000/1000])
+legend("sawtooth","square","triangle","sine","mean");
+xlim([0 100000/10000])
 
 %%
-sound(y_sine, Fs);
+sound(y2_square, Fs);
