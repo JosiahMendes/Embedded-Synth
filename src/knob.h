@@ -61,10 +61,11 @@ class Knob {
     }
 
     public:
-        Knob(uint8_t maximum, uint8_t minimum, uint8_t knob_num) {
+        Knob(uint8_t maximum, uint8_t minimum, uint8_t knob_num, uint8_t start) {
             max = maximum;
             min = minimum;
             num = knob_num;
+            rotation_variable = start;
         }
 
         void read(uint8_t input) {

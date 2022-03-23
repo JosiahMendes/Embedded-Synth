@@ -53,7 +53,8 @@ const int HKOE_BIT = 6;
 
 const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
 const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	1061711081,	1056367844,	1047042225,	1071042264,	1053813723,	1030792152,	1046317902,	1060317060};
-const int32_t sine_factor [] = {258610,	230395,	205259,	182865,	162914,	145140,	129305,	115198,	102629,	91432,	81457,	72570};
+const double sine_factor[] = {0.000002303951606, 0.000002052587542, 0.000001828647598 ,0.000001629139798 ,0.000001451398562 ,0.000001293049119 ,0.000001151975806 ,0.000001026293767 ,0.000000914323797 ,0.000000814569898 ,0.000000725699277	
+};
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
 
@@ -66,10 +67,10 @@ volatile int32_t currentStepSize[n];
 volatile int32_t currentAverage[n];
 
 // Knob
-Knob knob0(7, 0, 0);
-Knob knob1(16, 0, 1);
-Knob knob2(16, 0, 2);
-Knob knob3(16, 0, 3);
+Knob knob0(7, 0, 0, 0);
+Knob knob1(16, 0, 1, 0);
+Knob knob2(16, 0, 2, 0);
+Knob knob3(16, 0, 3, 16);
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
@@ -308,6 +309,11 @@ void sampleISR(){
   static int32_t phaseAcc_2_sel = 0;
   static int32_t phaseAcc_3_sel = 0;
 
+  static double phaseAcc_0_sine = 0;
+  static double phaseAcc_1_sine = 0;
+  static double phaseAcc_2_sine = 0;
+  static double phaseAcc_3_sine = 0;
+
   if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) {
     // Sawtooth: Deduct by DC for polyphony
     phaseAcc_0_sel = phaseAcc_0 - currentAverage[0];
@@ -359,24 +365,50 @@ void sampleISR(){
       phaseAcc_3_sel = int32_max - phaseAcc_3*4;
     }
   } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
-    // Sine
-    phaseAcc_0_sel = int32_max*sin(phaseAcc_0/sine_factor[0]/1000000);
-    phaseAcc_1_sel = int32_max*sin(phaseAcc_1/sine_factor[1]/1000000);
-    phaseAcc_2_sel = int32_max*sin(phaseAcc_2/sine_factor[2]/1000000);
-    phaseAcc_3_sel = int32_max*sin(phaseAcc_3/sine_factor[3]/1000000);
+    /* Sine
+    phaseAcc_0_sine = (double)int32_max *sin(phaseAcc_0*sine_factor[0]);
+    phaseAcc_1_sine = (double)int32_max *sin(phaseAcc_1*sine_factor[1]);
+    phaseAcc_2_sine = (double)int32_max *sin(phaseAcc_2*sine_factor[2]);
+    phaseAcc_3_sine = (double)int32_max *sin(phaseAcc_3*sine_factor[3]);
+
+    static double phaseAcc_final = 0;
+    if (phaseAcc_0_sine > phaseAcc_1_sine && phaseAcc_0_sine > phaseAcc_2_sine && phaseAcc_0_sine > phaseAcc_3_sine) {
+      phaseAcc_final = phaseAcc_0_sine;
+    } else if (phaseAcc_1_sine > phaseAcc_0_sine && phaseAcc_1_sine > phaseAcc_2_sine && phaseAcc_1_sine > phaseAcc_3_sine) {
+      phaseAcc_final = phaseAcc_1_sine;
+    } else if (phaseAcc_2_sine > phaseAcc_1_sine && phaseAcc_2_sine > phaseAcc_0_sine && phaseAcc_2_sine > phaseAcc_3_sine) {
+      phaseAcc_final = phaseAcc_2_sine;
+    } else {
+      phaseAcc_final = phaseAcc_3_sine;
+    }
+
+    static int32_t phaseAcc_casted = (int32_t) phaseAcc_final;
+    int32_t Vout = phaseAcc_casted >> 24;
+    Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
+    analogWrite(OUTR_PIN, Vout+128);
+    */
   }
 
-  static int32_t phaseAcc_final = 0;
-
-  if (phaseAcc_0_sel > phaseAcc_1_sel && phaseAcc_0_sel > phaseAcc_2_sel && phaseAcc_0_sel > phaseAcc_3_sel) {
-    phaseAcc_final = phaseAcc_0_sel;
-  } else if (phaseAcc_1_sel > phaseAcc_0_sel && phaseAcc_1_sel > phaseAcc_2_sel && phaseAcc_1_sel > phaseAcc_3_sel) {
-    phaseAcc_final = phaseAcc_1_sel;
-  } else if (phaseAcc_2_sel > phaseAcc_1_sel && phaseAcc_2_sel > phaseAcc_0_sel && phaseAcc_2_sel > phaseAcc_3_sel) {
-    phaseAcc_final = phaseAcc_2_sel;
+  if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
+    //pass
   } else {
-    phaseAcc_final = phaseAcc_3_sel;
-  } 
+    static int32_t phaseAcc_final = 0;
+
+    if (phaseAcc_0_sel > phaseAcc_1_sel && phaseAcc_0_sel > phaseAcc_2_sel && phaseAcc_0_sel > phaseAcc_3_sel) {
+      phaseAcc_final = phaseAcc_0_sel;
+    } else if (phaseAcc_1_sel > phaseAcc_0_sel && phaseAcc_1_sel > phaseAcc_2_sel && phaseAcc_1_sel > phaseAcc_3_sel) {
+      phaseAcc_final = phaseAcc_1_sel;
+    } else if (phaseAcc_2_sel > phaseAcc_1_sel && phaseAcc_2_sel > phaseAcc_0_sel && phaseAcc_2_sel > phaseAcc_3_sel) {
+      phaseAcc_final = phaseAcc_2_sel;
+    } else {
+      phaseAcc_final = phaseAcc_3_sel;
+    }
+
+    int32_t Vout = phaseAcc_final >> 24;
+    Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
+    analogWrite(OUTR_PIN, Vout+128);
+  }
+  
 
   /*
   for (int i=0; i<n; i++) {
@@ -390,12 +422,7 @@ void sampleISR(){
       phaseAcc_final = phaseAcc_DC[i];
     }
   }
-  */
-
-  int32_t Vout = phaseAcc_final >> 24;
-  Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
-
-  analogWrite(OUTR_PIN, Vout+128);
+  */  
 }
 
 void setup() {
