@@ -3,6 +3,7 @@
 #include<string.h>
 #include <STM32FreeRTOS.h>
 #include "Knob.h"
+#include <ES_CAN.h>
 
 enum notes {
   C  = 0,
@@ -51,9 +52,10 @@ const int DRST_BIT = 4;
 const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
-const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
+//const int32_t stepSizes [] = {51076057,54113197,57330935,60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346,91007187,96418756};
+const int32_t stepSizes [] = {817217093, 865810744, 917293736, 971839820, 1029628605, 1090853364, 1155719084, 1224442465, 1297251922, 1374389535, 1456114953, 1542699542};
 const int32_t averages [] = {1072095723,	1055207342,	1060528483,	1062773477,	1061711081,	1056367844,	1047042225,	1071042264,	1053813723,	1030792152,	1046317902,	1060317060};
-const double sine_factor[] = {0.000002303951606, 0.000002052587542, 0.000001828647598 ,0.000001629139798 ,0.000001451398562 ,0.000001293049119 ,0.000001151975806 ,0.000001026293767 ,0.000000914323797 ,0.000000814569898 ,0.000000725699277	
+const double sine_factor[] = {0.000002303951606, 0.000002052587542, 0.000001828647598 ,0.000001629139798 ,0.000001451398562 ,0.000001293049119 ,0.000001151975806 ,0.000001026293767 ,0.000000914323797 ,0.000000814569898 ,0.000000725699277
 };
 const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 volatile uint8_t keyArray[7];
@@ -65,6 +67,28 @@ const int32_t int32_max = 2147483647;
 const uint8_t n = 4;
 volatile int32_t currentStepSize[n];
 volatile int32_t currentAverage[n];
+
+
+// global variable determining mode
+bool receiver = true;
+bool position_set = false; // indicates whether position has been set
+uint8_t position = 6; // undefined
+uint8_t octave = 7; // some initial value
+uint8_t lowest_octave = 3; // position 0 will have this octave
+//size_t id_hash;
+volatile bool externalKeyPressed = false;
+
+// CAN communication variables
+uint8_t TX_Message[8] = {0};
+uint8_t RX_Message[8] = {0};
+
+// queue handler
+QueueHandle_t msgInQ;
+QueueHandle_t msgOutQ;
+
+// global handle for a FreeRTOS mutex
+SemaphoreHandle_t RX_Message_Mutex;
+SemaphoreHandle_t CAN_TX_Semaphore;
 
 // Knob
 Knob knob0(7, 0, 0, 0);
@@ -122,7 +146,7 @@ void findKeywithFunc(void (*func)(notes*)) {
       bool A  = (~GsB >> 1) & B1;
       bool As = (~GsB >> 2) & B1;
       bool B  = (~GsB >> 3) & B1;
-      
+
 
       bool bool_array [] = {C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B};
       notes localNotesPressed [] = {None,None,None,None};
@@ -130,7 +154,7 @@ void findKeywithFunc(void (*func)(notes*)) {
       // Return an array of 2 notes
       bool current_key = false;
       notes current_note = None;
-      
+
       for (int i=0; i<12; i++) {
         current_key = bool_array[i];
         if (current_key) {current_note = ((notes)i);}
@@ -174,7 +198,7 @@ void setStepSize(notes* note_list) {
       int32_t localCurrentAverage;
       for (int i=0; i<n; i++) {
         if (note_list[i] != None) {
-          localCurrentStepSize = stepSizes[note_list[i]];
+          localCurrentStepSize = stepSizes[note_list[i]] >> (8 - octave);
           localCurrentAverage = averages[note_list[i]];
           xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
           currentStepSize[i] = localCurrentStepSize;
@@ -211,7 +235,21 @@ void setNoteName(notes* note_list) {
       xSemaphoreGive(keyArrayMutex);
 
       // Piano note
-      u8g2.drawStr(72,10, keyString.c_str());
+      u8g2.setCursor(37,10);
+      u8g2.print(position, HEX);
+      u8g2.print(octave, HEX);
+      u8g2.drawStr(47,10, keyString.c_str());
+
+      //Reciever/Sender
+      receiver ? u8g2.drawStr(77,10,"R") : u8g2.drawStr(77,10,"S");
+
+      // TX/RX Messages
+      u8g2.setCursor(87,10);
+      u8g2.print((char) TX_Message[0]);
+      xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
+      u8g2.print(RX_Message[1]);
+      u8g2.print(RX_Message[2]);
+      xSemaphoreGive(RX_Message_Mutex);
 
       // Right hand knob
       u8g2.setCursor(2,20);
@@ -237,8 +275,21 @@ void setNoteName(notes* note_list) {
       u8g2.drawStr(72, 30,"-");
       u8g2.drawStr(107, 30,"Vol");
       // transfer internal memory to the display
-      u8g2.sendBuffer();          
+      u8g2.sendBuffer();
 }
+
+void setCommMessage(notes* note_list){
+  if(note_list[0] == None){
+      TX_Message[0] = 'R';
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  } else {
+      TX_Message[0] = 'P';
+      TX_Message[1] = octave;
+      TX_Message[2] = note_list[0];
+      xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+}
+
 
 void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS; // Q6a: atttempt to improve knob accuracy by increasing sample rate
@@ -256,7 +307,9 @@ void scanKeysTask(void * pvParameters) {
         xSemaphoreGive(keyArrayMutex);
     }
     // Call function for setting stepsize
-    findKeywithFunc(&setStepSize);
+    // TODO: HJ replaces this with `findKeyWithFunc(&setCommMessage)`
+    findKeywithFunc(&setCommMessage);
+    //findKeywithFunc(&setStepSize);
 
     // Find rotation of knob, protected with a key array mutex?
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
@@ -287,6 +340,118 @@ void displayUpdateTask(void * pvParameters){
 
 }
 
+void turnoffEast() {
+  digitalWrite(OUT_PIN, LOW);
+  setRow(6);
+  digitalWrite(REN_PIN,1);
+  delayMicroseconds(2);
+  readCols();
+  digitalWrite(REN_PIN,0);
+}
+
+void broadcastPosition() {
+  TX_Message[0] = 'H';
+  TX_Message[1] = 0;
+  TX_Message[2] = position;
+  xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+}
+
+void broadcastEndOfHandshake() {
+  if(position != 0) {
+    receiver = false;
+  }
+  octave = position + lowest_octave;
+  TX_Message[0] = 'E';
+  xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+}
+
+void decodeTask(void * pvParameters) {
+  uint8_t local_RX_Message[8] = {0};
+  bool local_externalKeyPressed;
+  while (true) {
+    for (int i = 0; i < 3; i++) {
+      setRow(i);
+      delayMicroseconds(2);
+      keyArray[i] = readCols();
+    }
+    // Call function for setting stepsize
+    if(receiver && !externalKeyPressed)
+      findKeywithFunc(&setStepSize);
+    if(!receiver)
+      findKeywithFunc(&setCommMessage);
+
+    // wait until a message is available in the queue
+    xQueueReceive(msgInQ, local_RX_Message, portMAX_DELAY);
+
+    xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
+    std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
+    xSemaphoreGive(RX_Message_Mutex);
+
+    switch(RX_Message[0]) {
+      case 'R':
+        {
+          local_externalKeyPressed = false;
+          __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
+          notes empty [4]= {None, None, None, None};
+          setStepSize(empty);
+          break;
+        }
+      case 'P':
+        {
+          local_externalKeyPressed = true;
+          __atomic_store_n(&externalKeyPressed,local_externalKeyPressed,__ATOMIC_RELAXED);
+          // TODO: Fixing this
+          int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (8 - RX_Message[1]);
+          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+          currentStepSize[0] = localCurrentStepSize;
+          xSemaphoreGive(stepSizeMutex);
+          break;
+        }
+      case 'H':
+        {
+          setRow(5);
+          delayMicroseconds(2);
+          keyArray[5] = readCols();
+          if(keyArray[5] >> 3 & B1) { // west turned off
+            if(!position_set) {
+              position = RX_Message[2] + 1;
+              position_set = true;
+            }
+            if(keyArray[6] >> 3 & B1) { // check if east turned off
+              broadcastEndOfHandshake();
+            }
+            else {
+              turnoffEast();
+              broadcastPosition();
+            }
+          }
+          break;
+        }
+      case 'E':
+        {
+          if(position == 0) {
+            receiver = true;
+          }
+          else {
+            receiver = false;
+          }
+          octave =  position + lowest_octave;
+          break;
+        }
+    }
+  }
+}
+
+void CAN_TX_Task(void * pvParameters) {
+  uint8_t msgOut[8];
+  while (true) {
+    xQueueReceive(msgOutQ, msgOut, portMAX_DELAY);
+    xSemaphoreTake(CAN_TX_Semaphore, portMAX_DELAY);
+    CAN_TX(0x123, msgOut);
+  }
+}
+
+//TODO: Update
 void sampleISR(){
   //static int32_t phaseAcc[n] = {0,0,0,0};
   //static int32_t phaseAcc_DC[n] = {0,0,0,0};
@@ -314,101 +479,103 @@ void sampleISR(){
   static double phaseAcc_2_sine = 0;
   static double phaseAcc_3_sine = 0;
 
-  if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) {
-    // Sawtooth: Deduct by DC for polyphony
-    phaseAcc_0_sel = phaseAcc_0 - currentAverage[0];
-    phaseAcc_1_sel = phaseAcc_1 - currentAverage[1];
-    phaseAcc_2_sel = phaseAcc_2 - currentAverage[2];
-    phaseAcc_3_sel = phaseAcc_3 - currentAverage[3];
-  } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) {
-    // Square
-    if (phaseAcc_0 > int32_max/2) {
-      phaseAcc_0_sel = int32_max;
-    } else {
-      phaseAcc_0_sel = 0;
-    }
-    if (phaseAcc_1 > int32_max/2) {
-      phaseAcc_1_sel = int32_max;
-    } else {
-      phaseAcc_1_sel = 0;
-    }
-    if (phaseAcc_2 > int32_max/2) {
-      phaseAcc_2_sel = int32_max;
-    } else {
-      phaseAcc_2_sel = 0;
-    }
-    if (phaseAcc_3 > int32_max/2) {
-      phaseAcc_3_sel = int32_max;
-    } else {
-      phaseAcc_3_sel = 0;
-    }
-  } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) {
-    // Triangle
-    if (phaseAcc_0 > int32_max/2) {
-      phaseAcc_0_sel = -3*int32_max + phaseAcc_0*4;
-    } else {
-      phaseAcc_0_sel = int32_max - phaseAcc_0*4;
-    }
-    if (phaseAcc_1 > int32_max/2) {
-      phaseAcc_1_sel = -3*int32_max + phaseAcc_1*4;
-    } else {
-      phaseAcc_1_sel = int32_max - phaseAcc_1*4;
-    }
-    if (phaseAcc_2 > int32_max/2) {
-      phaseAcc_2_sel = -3*int32_max + phaseAcc_2*4;
-    } else {
-      phaseAcc_2_sel = int32_max - phaseAcc_2*4;
-    }
-    if (phaseAcc_3 > int32_max/2) {
-      phaseAcc_3_sel = -3*int32_max + phaseAcc_3*4;
-    } else {
-      phaseAcc_3_sel = int32_max - phaseAcc_3*4;
-    }
-  } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
-    /* Sine
-    phaseAcc_0_sine = (double)int32_max *sin(phaseAcc_0*sine_factor[0]);
-    phaseAcc_1_sine = (double)int32_max *sin(phaseAcc_1*sine_factor[1]);
-    phaseAcc_2_sine = (double)int32_max *sin(phaseAcc_2*sine_factor[2]);
-    phaseAcc_3_sine = (double)int32_max *sin(phaseAcc_3*sine_factor[3]);
+  if (receiver){
+    if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) {
+      // Sawtooth: Deduct by DC for polyphony
+      phaseAcc_0_sel = phaseAcc_0 - currentAverage[0];
+      phaseAcc_1_sel = phaseAcc_1 - currentAverage[1];
+      phaseAcc_2_sel = phaseAcc_2 - currentAverage[2];
+      phaseAcc_3_sel = phaseAcc_3 - currentAverage[3];
+    } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) {
+      // Square
+      if (phaseAcc_0 > int32_max/2) {
+        phaseAcc_0_sel = int32_max;
+      } else {
+        phaseAcc_0_sel = 0;
+      }
+      if (phaseAcc_1 > int32_max/2) {
+        phaseAcc_1_sel = int32_max;
+      } else {
+        phaseAcc_1_sel = 0;
+      }
+      if (phaseAcc_2 > int32_max/2) {
+        phaseAcc_2_sel = int32_max;
+      } else {
+        phaseAcc_2_sel = 0;
+      }
+      if (phaseAcc_3 > int32_max/2) {
+        phaseAcc_3_sel = int32_max;
+      } else {
+        phaseAcc_3_sel = 0;
+      }
+    } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) {
+      // Triangle
+      if (phaseAcc_0 > int32_max/2) {
+        phaseAcc_0_sel = -3*int32_max + phaseAcc_0*4;
+      } else {
+        phaseAcc_0_sel = int32_max - phaseAcc_0*4;
+      }
+      if (phaseAcc_1 > int32_max/2) {
+        phaseAcc_1_sel = -3*int32_max + phaseAcc_1*4;
+      } else {
+        phaseAcc_1_sel = int32_max - phaseAcc_1*4;
+      }
+      if (phaseAcc_2 > int32_max/2) {
+        phaseAcc_2_sel = -3*int32_max + phaseAcc_2*4;
+      } else {
+        phaseAcc_2_sel = int32_max - phaseAcc_2*4;
+      }
+      if (phaseAcc_3 > int32_max/2) {
+        phaseAcc_3_sel = -3*int32_max + phaseAcc_3*4;
+      } else {
+        phaseAcc_3_sel = int32_max - phaseAcc_3*4;
+      }
+    } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
+      /* Sine
+      phaseAcc_0_sine = (double)int32_max *sin(phaseAcc_0*sine_factor[0]);
+      phaseAcc_1_sine = (double)int32_max *sin(phaseAcc_1*sine_factor[1]);
+      phaseAcc_2_sine = (double)int32_max *sin(phaseAcc_2*sine_factor[2]);
+      phaseAcc_3_sine = (double)int32_max *sin(phaseAcc_3*sine_factor[3]);
 
-    static double phaseAcc_final = 0;
-    if (phaseAcc_0_sine > phaseAcc_1_sine && phaseAcc_0_sine > phaseAcc_2_sine && phaseAcc_0_sine > phaseAcc_3_sine) {
-      phaseAcc_final = phaseAcc_0_sine;
-    } else if (phaseAcc_1_sine > phaseAcc_0_sine && phaseAcc_1_sine > phaseAcc_2_sine && phaseAcc_1_sine > phaseAcc_3_sine) {
-      phaseAcc_final = phaseAcc_1_sine;
-    } else if (phaseAcc_2_sine > phaseAcc_1_sine && phaseAcc_2_sine > phaseAcc_0_sine && phaseAcc_2_sine > phaseAcc_3_sine) {
-      phaseAcc_final = phaseAcc_2_sine;
-    } else {
-      phaseAcc_final = phaseAcc_3_sine;
+      static double phaseAcc_final = 0;
+      if (phaseAcc_0_sine > phaseAcc_1_sine && phaseAcc_0_sine > phaseAcc_2_sine && phaseAcc_0_sine > phaseAcc_3_sine) {
+        phaseAcc_final = phaseAcc_0_sine;
+      } else if (phaseAcc_1_sine > phaseAcc_0_sine && phaseAcc_1_sine > phaseAcc_2_sine && phaseAcc_1_sine > phaseAcc_3_sine) {
+        phaseAcc_final = phaseAcc_1_sine;
+      } else if (phaseAcc_2_sine > phaseAcc_1_sine && phaseAcc_2_sine > phaseAcc_0_sine && phaseAcc_2_sine > phaseAcc_3_sine) {
+        phaseAcc_final = phaseAcc_2_sine;
+      } else {
+        phaseAcc_final = phaseAcc_3_sine;
+      }
+
+      static int32_t phaseAcc_casted = (int32_t) phaseAcc_final;
+      int32_t Vout = phaseAcc_casted >> 24;
+      Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
+      analogWrite(OUTR_PIN, Vout+128);
+      */
     }
 
-    static int32_t phaseAcc_casted = (int32_t) phaseAcc_final;
-    int32_t Vout = phaseAcc_casted >> 24;
-    Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
-    analogWrite(OUTR_PIN, Vout+128);
-    */
+    if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
+      //pass
+    } else {
+      static int32_t phaseAcc_final = 0;
+
+      if (phaseAcc_0_sel > phaseAcc_1_sel && phaseAcc_0_sel > phaseAcc_2_sel && phaseAcc_0_sel > phaseAcc_3_sel) {
+        phaseAcc_final = phaseAcc_0_sel;
+      } else if (phaseAcc_1_sel > phaseAcc_0_sel && phaseAcc_1_sel > phaseAcc_2_sel && phaseAcc_1_sel > phaseAcc_3_sel) {
+        phaseAcc_final = phaseAcc_1_sel;
+      } else if (phaseAcc_2_sel > phaseAcc_1_sel && phaseAcc_2_sel > phaseAcc_0_sel && phaseAcc_2_sel > phaseAcc_3_sel) {
+        phaseAcc_final = phaseAcc_2_sel;
+      } else {
+        phaseAcc_final = phaseAcc_3_sel;
+      }
+
+      int32_t Vout = phaseAcc_final >> 24;
+      Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
+      analogWrite(OUTR_PIN, Vout+128);
+    }
   }
 
-  if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
-    //pass
-  } else {
-    static int32_t phaseAcc_final = 0;
-
-    if (phaseAcc_0_sel > phaseAcc_1_sel && phaseAcc_0_sel > phaseAcc_2_sel && phaseAcc_0_sel > phaseAcc_3_sel) {
-      phaseAcc_final = phaseAcc_0_sel;
-    } else if (phaseAcc_1_sel > phaseAcc_0_sel && phaseAcc_1_sel > phaseAcc_2_sel && phaseAcc_1_sel > phaseAcc_3_sel) {
-      phaseAcc_final = phaseAcc_1_sel;
-    } else if (phaseAcc_2_sel > phaseAcc_1_sel && phaseAcc_2_sel > phaseAcc_0_sel && phaseAcc_2_sel > phaseAcc_3_sel) {
-      phaseAcc_final = phaseAcc_2_sel;
-    } else {
-      phaseAcc_final = phaseAcc_3_sel;
-    }
-
-    int32_t Vout = phaseAcc_final >> 24;
-    Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
-    analogWrite(OUTR_PIN, Vout+128);
-  }
-  
 
   /*
   for (int i=0; i<n; i++) {
@@ -422,7 +589,54 @@ void sampleISR(){
       phaseAcc_final = phaseAcc_DC[i];
     }
   }
-  */  
+  */
+}
+
+void CAN_RX_ISR(void) {
+  uint8_t RX_Message_ISR[8];
+  uint32_t ID;
+  // receive message data
+  CAN_RX(ID, RX_Message_ISR);
+  // place data in the queue
+  xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
+}
+
+void CAN_TX_ISR(void) {
+  xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
+}
+
+void initialCheck() {
+  digitalWrite(OUT_PIN,1);
+  for(int i = 5; i <= 6; i++) {
+    setRow(i);
+    digitalWrite(REN_PIN,1);
+    delayMicroseconds(2);
+    keyArray[i] = readCols();
+    digitalWrite(REN_PIN,0);
+  }
+  if((keyArray[5] >> 3) & B1) { // west not connected
+    position = 0;
+    position_set = true;
+    if((keyArray[6] >> 3) & B1) {
+      CAN_Init(true);
+    }
+  }
+}
+
+void initialHandshake() {
+  // uint32_t id = HAL_GetUIDw0(); // unique id
+  // std::hash<uint32_t> myHash;
+  // id_hash = myHash(id);
+  if(position_set) { // left most
+    if((keyArray[6] >> 3) & B1) { // the only module
+      octave = position + lowest_octave;
+      // end of handshake
+    }
+    else {
+      turnoffEast();
+      broadcastPosition();
+    }
+  }
 }
 
 void setup() {
@@ -474,7 +688,21 @@ void setup() {
   sampleTimer->attachInterrupt(sampleISR);
   sampleTimer->resume();
 
+  //Initialise CAN
+  //CAN_Init(true);
+  CAN_Init(false);
+  setCANFilter(0x123,0x7ff);
+  CAN_RegisterRX_ISR(CAN_RX_ISR);
+  CAN_RegisterTX_ISR(CAN_TX_ISR);
+  //CAN_Start();
+
+  //Initialise queue handler
+  msgInQ = xQueueCreate(36, 8);
+  msgOutQ = xQueueCreate(36, 8);
+
   //Initialise Semaphore
+  RX_Message_Mutex = xSemaphoreCreateMutex();
+  CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
   keyArrayMutex = xSemaphoreCreateMutex();
   stepSizeMutex = xSemaphoreCreateMutex();
 
@@ -500,6 +728,44 @@ void setup() {
     1,/* Task priority*/
     &displayHandle
   );  /* Pointer to store the task handle*/
+
+  //Initialise Decode loop
+  TaskHandle_t decodeHandle = NULL;
+  xTaskCreate(
+    decodeTask,   /* Function that implements the task */
+    "decode",     /* Text name for the task */
+    256,          /* Stack size in words, not bytes */
+    NULL,         /* Parameter passed into the task */
+    1,            /* Task priority */
+    &decodeHandle /* Pointer to store the task handle */
+  );
+
+  //Initialise transmit thread
+  TaskHandle_t transmitHandle = NULL;
+  xTaskCreate(
+    CAN_TX_Task,   /* Function that implements the task */
+    "transmit",     /* Text name for the task */
+    256,          /* Stack size in words, not bytes */
+    NULL,         /* Parameter passed into the task */
+    1,            /* Task priority */
+    &transmitHandle /* Pointer to store the task handle */
+  );
+
+  //Initialise handshake: setting west and east out high
+  digitalWrite(OUT_PIN, HIGH);
+  for(int i = 5; i <= 6; i++) {
+    setRow(i);
+    digitalWrite(REN_PIN,1);
+    delayMicroseconds(2);
+    readCols();
+    digitalWrite(REN_PIN,0);
+  }
+
+  delayMicroseconds(1000000); // wait 1 sec
+  initialCheck();
+  CAN_Start(); // start here as CAN_Init value can change inside initialCheck()
+  delayMicroseconds(1000000); // wait 1 sec
+  initialHandshake();
 
   vTaskStartScheduler();
 
