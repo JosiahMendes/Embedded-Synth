@@ -240,7 +240,7 @@ void setNoteName(notes* note_list) {
       u8g2.print(octave, HEX);
       u8g2.drawStr(47,10, keyString.c_str());
 
-      //Reciever/Sender
+      //receiver/Sender
       receiver ? u8g2.drawStr(77,10,"R") : u8g2.drawStr(77,10,"S");
 
       // TX/RX Messages
@@ -307,9 +307,7 @@ void scanKeysTask(void * pvParameters) {
         xSemaphoreGive(keyArrayMutex);
     }
     // Call function for setting stepsize
-    // TODO: HJ replaces this with `findKeyWithFunc(&setCommMessage)`
     findKeywithFunc(&setCommMessage);
-    //findKeywithFunc(&setStepSize);
 
     // Find rotation of knob, protected with a key array mutex?
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
@@ -403,7 +401,12 @@ void decodeTask(void * pvParameters) {
           // TODO: Fixing this
           int32_t localCurrentStepSize = stepSizes[RX_Message[2]] >> (8 - RX_Message[1]);
           xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-          currentStepSize[0] = localCurrentStepSize;
+          for (int i=0; i<n; i++) {
+            if(currentStepSize[i] == 0) {
+              currentStepSize[i] = localCurrentStepSize;
+              break;
+            };
+          }
           xSemaphoreGive(stepSizeMutex);
           break;
         }
