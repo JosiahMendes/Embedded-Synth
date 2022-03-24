@@ -53,21 +53,7 @@ const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
 // This is for 44kHz!!
-//const int32_t stepSizes [] = {51076057, 54113197, 57330935, 60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346, 91007187, 96418756, };
-const int32_t stepSizes [] = {
-25538028	,
-27056599	,
-28665468	,
-30370005	,
-32175899	,
-34089178	,
-36116226	,
-38263809	,
-40539093	,
-42949673	,
-45503593	,
-48209378	,
-};
+const int32_t stepSizes [] = {51076057, 54113197, 57330935, 60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346, 91007187, 96418756, };
 const int32_t sine_acc[] = {49, 52, 55, 58, 61, 65, 69, 73, 77, 82, 87, 92};
 
 const int16_t lookup_size = 2048;
@@ -151,37 +137,14 @@ void findKeywithFunc(void (*func)(notes*)) {
       bool current_key = false;
       notes current_note = None;
       
+      int j = 0;
       for (int i=0; i<12; i++) {
         current_key = bool_array[i];
-        if (current_key) {current_note = ((notes)i);}
-        if (current_note != None) {
-          if (localNotesPressed[0] == None) {
-            localNotesPressed[0] = current_note;
-          } else if (localNotesPressed[1] == None){
-            localNotesPressed[1] = current_note;
-          } else if (localNotesPressed[2] == None){
-            localNotesPressed[2] = current_note;
-          } else if (localNotesPressed[3] == None){
-            localNotesPressed[3] = current_note;
-          } 
-          /* else if (localNotesPressed[4] == None){
-            localNotesPressed[4] = current_note;
-          } else if (localNotesPressed[5] == None){
-            localNotesPressed[5] = current_note;
-          } else if (localNotesPressed[6] == None){
-            localNotesPressed[6] = current_note;
-          } else if (localNotesPressed[7] == None){
-            localNotesPressed[7] = current_note;
-          } else if (localNotesPressed[8] == None){
-            localNotesPressed[8] = current_note;
-          } else if (localNotesPressed[9] == None){
-            localNotesPressed[9] = current_note;
-          } else {
-            //ignore for now
-          }
-          */
+        current_note = ((notes)i);
+        if (current_key && localNotesPressed[j] == None && j < n) {
+          localNotesPressed[j] = current_note;
+          j++;
         }
-        current_note = None;
       }
 
       func(localNotesPressed);
@@ -317,7 +280,6 @@ void sampleISR(){
       localCurrentSineAcc[i] = currentSineAcc[i];
     }
     for (int i=0; i<n; i++) {
-      //acc[i] += 512*localCurrentStepSize[i]/int32_max;
       acc[i] += localCurrentSineAcc[i];
       if (acc[i] > lookup_size) {
         acc[i] = 0;
