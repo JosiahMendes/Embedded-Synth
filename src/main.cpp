@@ -53,8 +53,21 @@ const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
 // This is for 44kHz!!
-const int32_t stepSizes [] = {51076057, 54113197, 57330935, 60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346, 91007187, 96418756, };
-// const int32_t sine_factor[] = {132, 125, 118, 111, 105, 99, 93, 88, 83, 79, 74, 70};
+//const int32_t stepSizes [] = {51076057, 54113197, 57330935, 60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346, 91007187, 96418756, };
+const int32_t stepSizes [] = {
+25538028	,
+27056599	,
+28665468	,
+30370005	,
+32175899	,
+34089178	,
+36116226	,
+38263809	,
+40539093	,
+42949673	,
+45503593	,
+48209378	,
+};
 const int32_t sine_acc[] = {49, 52, 55, 58, 61, 65, 69, 73, 77, 82, 87, 92};
 
 const int16_t lookup_size = 2048;
@@ -70,9 +83,7 @@ const int32_t half_max = 1073741824;
 const uint8_t n = 4;
 
 volatile int32_t currentStepSize[n];
-// volatile int32_t currentSineFactor[n];
 volatile int32_t currentSineAcc[n];
-// volatile int32_t currentSineFactor2[n];
 
 
 // Knob
@@ -174,27 +185,18 @@ void findKeywithFunc(void (*func)(notes*)) {
       }
 
       func(localNotesPressed);
-
-      //func(localNotesPressed[0], localNotesPressed[1]);
-      // __atomic_store_n(&localNotesPressed,notesPressed,__ATOMIC_RELAXED);
 }
 
 void setStepSize(notes* note_list) {
 
       int32_t localCurrentStepSize;
-       // double localCurrentSineFactor2;
-      // int32_t localCurrentSineFactor;
       int32_t localCurrentSineAcc;
       for (int i=0; i<n; i++) {
         if (note_list[i] != None) {
           localCurrentStepSize = stepSizes[note_list[i]];
-          // localCurrentSineFactor2 = sine_factor_dec[note_list[i]];
-          // localCurrentSineFactor = sine_factor[note_list[i]];
           localCurrentSineAcc = sine_acc[note_list[i]];
           xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
           currentStepSize[i] = localCurrentStepSize;
-          // currentSineFactor2[i] = localCurrentSineFactor2;
-          // currentSineFactor[i] = localCurrentSineFactor;
           currentSineAcc[i] = localCurrentSineAcc;
           xSemaphoreGive(stepSizeMutex);
         } else {
@@ -315,45 +317,45 @@ void sampleISR(){
       localCurrentSineAcc[i] = currentSineAcc[i];
     }
     for (int i=0; i<n; i++) {
-      //phaseAcc_sel[i] = int32_max*sin(localCurrentSineFactor2[i]*phaseAcc[i]);
       //acc[i] += 512*localCurrentStepSize[i]/int32_max;
       acc[i] += localCurrentSineAcc[i];
       if (acc[i] > lookup_size) {
         acc[i] = 0;
       }
-      phaseAcc_sel[i]  = sine_lookup[acc[i]];
+      phaseAcc_sel[i]  = sine_lookup[acc[i]] >> 2; // + half_max; //TODO: bring back to positive
     }
   } else {
     int32_t localCurrentStepSize[n];
     for (int i=0; i<n; i++) {
-      localCurrentStepSize[i] = currentStepSize[i];
+      localCurrentStepSize[i] = currentStepSize[i]; 
       phaseAcc[i] += localCurrentStepSize[i];
     }
     if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) { // Sawtooth
       for (int i=0; i<n; i++) {
-        phaseAcc_sel[i] =  phaseAcc[i];
+        phaseAcc_sel[i] =  phaseAcc[i] >> 2;
       }
     } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) { // Square: particularly problematic
       for (int i=0; i<n; i++) {
-        if (phaseAcc[i] > half_max) {
-          phaseAcc_sel[i] = int32_max;
+        if (phaseAcc[i] > 0) {
+          phaseAcc_sel[i] = int32_max >> 2;
         } else {
-          phaseAcc_sel[i] = 0;
+          phaseAcc_sel[i] = -int32_max >> 2;
         }
       }
-    } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) { // Triangular
+    } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) { // Triangular //TODO: might cause issues due to uint
       for (int i=0; i<n; i++) {
-        if (phaseAcc[i]  > half_max) {
-          phaseAcc_sel[i]  = -3*int32_max + phaseAcc[i]*4;
+        if (phaseAcc[i]  > 0) {
+          phaseAcc_sel[i]  = (int32_max - phaseAcc[i]*2)/4;
         } else {
-          phaseAcc_sel[i]  = int32_max - phaseAcc[i]*4;
+          phaseAcc_sel[i]  = (int32_max + phaseAcc[i]*2)/4;
         }
       }
     }
   }
 
-  int32_t phaseAcc_final = 0;
+  int32_t phaseAcc_final;
 
+  /*
   if (phaseAcc_sel[0] > phaseAcc_final) {
     phaseAcc_final = phaseAcc_sel[0];
   } else if (phaseAcc_sel[1] > phaseAcc_final) {
@@ -363,23 +365,12 @@ void sampleISR(){
   } else if (phaseAcc_sel[3] > phaseAcc_final) {
     phaseAcc_final = phaseAcc_sel[3];
   }
+  */
+ phaseAcc_final = phaseAcc_sel[0] + phaseAcc_sel[1] + phaseAcc_sel[2] + phaseAcc_sel[3];
 
   int32_t Vout = phaseAcc_final >> 24;
   Vout = Vout >> (8 - knob3.get_rotation()/2); // Volume Control
   analogWrite(OUTR_PIN, Vout+128);
- 
-  /*
-  } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
-    phaseAcc_0_sel = sin(localCurrentSineFactor[0]*acc);
-    acc += 1;
-    phaseAcc_0_sel = int32_max*sin(3.14*int32_max/localCurrentStepSize[0]*acc_0);
-    if (acc_0 >= int32_max/localCurrentStepSize[0]) {
-      acc_0 = 0;
-    } else {
-      acc_0 += 1;
-    }
-  }
-  */
 }
 
 void setup() {
