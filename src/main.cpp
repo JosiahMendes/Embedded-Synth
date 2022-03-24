@@ -1,56 +1,14 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
-#include<string.h>
+#include <string.h>
+#include <ES_CAN.h>
 #include <STM32FreeRTOS.h>
 #include "Knob.h"
 #include "global_vars.h"
+#include <vector>
+#include <algorithm>
 
-enum notes {
-  C  = 0,
-  Cs = 1,
-  D  = 2,
-  Ds = 3,
-  E  = 4,
-  F  = 5,
-  Fs = 6,
-  G  = 7,
-  Gs = 8,
-  A  = 9,
-  As = 10,
-  B  = 11,
-  None = 12
-};
 
-//Constants
-const uint32_t interval = 100; //Display update interval
-
-//Pin definitions
-//Row select and enable
-const int RA0_PIN = D3;
-const int RA1_PIN = D6;
-const int RA2_PIN = D12;
-const int REN_PIN = A5;
-
-//Matrix input and output
-const int C0_PIN = A2;
-const int C1_PIN = D9;
-const int C2_PIN = A6;
-const int C3_PIN = D1;
-const int OUT_PIN = D11;
-
-//Audio analogue out
-const int OUTL_PIN = A4;
-const int OUTR_PIN = A3;
-
-//Joystick analogue in
-const int JOYY_PIN = A0;
-const int JOYX_PIN = A1;
-
-//Output multiplexer bits
-const int DEN_BIT = 3;
-const int DRST_BIT = 4;
-const int HKOW_BIT = 5;
-const int HKOE_BIT = 6;
 
 // This is for 44kHz!!
 const int32_t stepSizes [] = {51076057, 54113197, 57330935, 60740010, 64351799, 68178356, 72232452, 76527617, 81078186, 85899346, 91007187, 96418756, };
@@ -71,6 +29,28 @@ const uint8_t n = 4;
 volatile int32_t currentStepSize[n];
 volatile int32_t currentSineAcc[n];
 
+// global variable that keeps track of which keys are currently pressed
+std::vector<std::string> keysPressed;
+
+// global variable determining mode for multi-module CAN communication
+bool receiver = true;
+bool only_module = false;
+bool position_set = false; // indicates whether position has been set
+uint8_t position = 6; // undefined
+uint8_t octave = 7; // some initial value
+uint8_t lowest_octave = 3; // position 0 will have this octave
+
+// CAN communication variables
+uint8_t TX_Message[8] = {0};
+uint8_t RX_Message[8] = {0};
+
+// global handle for a FreeRTOS mutex
+SemaphoreHandle_t RX_Message_Mutex;
+SemaphoreHandle_t CAN_TX_Semaphore;
+
+// queue handler
+QueueHandle_t msgInQ;
+QueueHandle_t msgOutQ;
 
 // Knob
 Knob knob0(7, 0, 0, 0);
@@ -154,7 +134,7 @@ void setStepSize(notes* note_list) {
 
       int32_t localCurrentStepSize;
       int32_t localCurrentSineAcc;
-      for (int i=0; i<n; i++) {
+      for (int i = 0; i < n; i++) {
         if (note_list[i] != None) {
           localCurrentStepSize = stepSizes[note_list[i]];
           localCurrentSineAcc = sine_acc[note_list[i]];
@@ -222,23 +202,104 @@ void setNoteName(notes* note_list) {
       u8g2.sendBuffer();          
 }
 
+void compareKeyArray(uint8_t oldKeyArray[3], uint8_t newKeyArray[3]) {
+  uint8_t oldCDs = oldKeyArray[0];
+  uint8_t oldEG = oldKeyArray[1];
+  uint8_t oldGsB = oldKeyArray[2];
+  uint8_t newCDs = newKeyArray[0];
+  uint8_t newEG = newKeyArray[1];
+  uint8_t newGsB = newKeyArray[2];
+  TX_Message[1] = octave;
+  if ( (~oldCDs >> 0) & B1 != (~newCDs >> 0) & B1 ) { // C changed
+    TX_Message[0] = ((~oldCDs >> 0) & B1) ? 'R' : 'P';
+    TX_Message[2] = 0;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldCDs >> 1) & B1 != (~newCDs >> 1) & B1) { // Cs changed
+    TX_Message[0] = ((~oldCDs >> 1) & B1) ? 'R' : 'P';
+    TX_Message[2] = 1;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldCDs >> 2) & B1 != (~newCDs >> 2) & B1) { // D changed
+    TX_Message[0] = ((~oldCDs >> 2) & B1) ? 'R' : 'P';
+    TX_Message[2] = 2;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldCDs >> 3) & B1 != (~newCDs >> 3) & B1) { // Ds changed
+    TX_Message[0] = ((~oldCDs >> 3) & B1) ? 'R' : 'P';
+    TX_Message[2] = 3;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldEG  >> 0) & B1 != (~newEG >> 0) & B1) { // E changed
+    TX_Message[0] = ((~oldEG >> 0) & B1) ? 'R' : 'P';
+    TX_Message[2] = 4;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldEG  >> 1) & B1 != (~newEG >> 1) & B1) { // F changed
+    TX_Message[0] = ((~oldEG >> 1) & B1) ? 'R' : 'P';
+    TX_Message[2] = 5;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldEG  >> 2) & B1 != (~newEG >> 2) & B1) { // Fs changed
+    TX_Message[0] = ((~oldEG >> 2) & B1) ? 'R' : 'P';
+    TX_Message[2] = 6;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldEG  >> 3) & B1 != (~newEG >> 3) & B1) { // G changed
+    TX_Message[0] = ((~oldEG >> 3) & B1) ? 'R' : 'P';
+    TX_Message[2] = 7;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldGsB >> 0) & B1 != (~newGsB >> 0) & B1) { // Gs changed
+    TX_Message[0] = ((~oldGsB >> 0) & B1) ? 'R' : 'P';
+    TX_Message[2] = 8;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldGsB >> 1) & B1 != (~newGsB >> 1) & B1) { // A changed
+    TX_Message[0] = (~oldGsB >> 1) & B1 ? 'R' : 'P';
+    TX_Message[2] = 9;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldGsB >> 2) & B1 != (~newGsB >> 2) & B1) { // As changed
+    TX_Message[0] = ((~oldGsB >> 2) & B1) ? 'R' : 'P';
+    TX_Message[2] = 10;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+  if((~oldGsB >> 3) & B1 != (~newGsB >> 3) & B1) { // B changed
+    TX_Message[0] = (~oldGsB >> 3) & B1 ? 'R' : 'P';
+    TX_Message[2] = 11;
+    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+  }
+}
+
 void scanKeysTask(void * pvParameters) {
   const TickType_t xFrequency = 50/portTICK_PERIOD_MS; // Q6a: atttempt to improve knob accuracy by increasing sample rate
   TickType_t xLastWakeTime= xTaskGetTickCount();
 
   while (true) {
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
-    // int32_t localCurrentStepSize[n] = {0,0,0,0}; //TODO: is this critical?
-
-    for (int i = 0; i < 7; i++) { //expanded to read row 3, which is for the right hand knob
+    uint8_t local_keyArray[3];
+    uint8_t old_keyArray [3] = {keyArray[0], keyArray[1], keyArray[2]};
+    for (int i = 0; i < 3; i++) {
+      setRow(i);
+      delayMicroseconds(2);
+      local_keyArray[i] = readCols();
+      xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+      keyArray[i] = readCols();
+      xSemaphoreGive(keyArrayMutex);
+    }
+    
+    for (int i = 3; i < 7; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
         delayMicroseconds(2);
         xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
         keyArray[i] = readCols();
         xSemaphoreGive(keyArrayMutex);
     }
-    // Call function for setting stepsize
-    findKeywithFunc(&setStepSize);
+
+    compareKeyArray(old_keyArray, local_keyArray);
+    // // Call function for setting stepsize
+    // findKeywithFunc(&setStepSize);
 
     // Find rotation of knob, protected with a key array mutex?
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
@@ -254,7 +315,57 @@ void scanKeysTask(void * pvParameters) {
   }
 }
 
-void displayUpdateTask(void * pvParameters){
+void decodeTask(void * pvParameters) {
+  uint8_t local_RX_Message[8] = {0};
+  xQueueReceive(msgInQ, local_RX_Message, portMAX_DELAY);
+  xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
+  std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
+  xSemaphoreGive(RX_Message_Mutex);
+  
+  switch(RX_Message[0]) {
+    case 'P': {
+      std::string value ({char(RX_Message[1]), char(RX_Message[2])}, 2);
+      keysPressed.push_back(value);
+      break;
+    }
+    case 'R': {
+      std::string value ({char(RX_Message[1]), char(RX_Message[2])}, 2);
+      keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      break;
+    }
+  }
+  int32_t localCurrentStepSize;
+  int32_t localCurrentSineAcc;
+  for (int j = 0; j < n; j++) {
+      if(keysPressed.size() > 0) {
+        std::string current = keysPressed[j];
+        int octave = current[1] - '0';
+        int note = current[0];
+        localCurrentStepSize = stepSizes[note];
+        localCurrentSineAcc = sine_acc[note];
+        xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+        currentStepSize[j] = localCurrentStepSize;
+        currentSineAcc[j] = localCurrentSineAcc;
+        xSemaphoreGive(stepSizeMutex);
+      } else{
+        xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+          currentStepSize[j] = 0;
+          currentSineAcc[j] = 0;
+        xSemaphoreGive(stepSizeMutex);
+      }
+  }
+  for (int i = 0; i < keysPressed.size(); i++) {
+    std::string current = keysPressed[i];
+    int octave = current[1] - '0';
+    int note = current[0];
+
+
+    
+
+  }
+}
+
+void displayUpdateTask(void * pvParameters) {
   const TickType_t xFrequency = 100/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime= xTaskGetTickCount();
   while (true) {
@@ -332,6 +443,28 @@ void sampleISR(){
   analogWrite(OUTR_PIN, Vout+128);
 }
 
+void CAN_TX_Task(void * pvParameters) {
+  uint8_t msgOut[8];
+  while (true) {
+    xQueueReceive(msgOutQ, msgOut, portMAX_DELAY);
+    xSemaphoreTake(CAN_TX_Semaphore, portMAX_DELAY);
+    CAN_TX(0x123, msgOut);
+  }
+}
+
+void CAN_RX_ISR(void) {
+  uint8_t RX_Message_ISR[8];
+  uint32_t ID;
+  // receive message data
+  CAN_RX(ID, RX_Message_ISR);
+  // place data in the queue
+  xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
+}
+
+void CAN_TX_ISR(void) {
+  xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
+}
+
 void setup() {
   // put your setup code here, to run once:
 
@@ -385,6 +518,17 @@ void setup() {
   keyArrayMutex = xSemaphoreCreateMutex();
   stepSizeMutex = xSemaphoreCreateMutex();
 
+  CAN_Init(true);
+  setCANFilter(0x123,0x7ff);
+  CAN_RegisterRX_ISR(CAN_RX_ISR);
+  CAN_RegisterTX_ISR(CAN_TX_ISR);
+
+  //Initialise queue handler
+  msgInQ = xQueueCreate(36, 8);
+  msgOutQ = xQueueCreate(36, 8);
+  RX_Message_Mutex = xSemaphoreCreateMutex();
+  CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
+
   //Initialise Keyscanning Loop
   TaskHandle_t scanKeysHandle = NULL;
   xTaskCreate(
@@ -407,6 +551,17 @@ void setup() {
     1,/* Task priority*/
     &displayHandle
   );  /* Pointer to store the task handle*/
+
+  //Initialise transmit thread
+  TaskHandle_t transmitHandle = NULL;
+  xTaskCreate(
+    CAN_TX_Task,   /* Function that implements the task */
+    "transmit",     /* Text name for the task */
+    256,          /* Stack size in words, not bytes */
+    NULL,         /* Parameter passed into the task */
+    1,            /* Task priority */
+    &transmitHandle /* Pointer to store the task handle */
+  );
 
   vTaskStartScheduler();
 
