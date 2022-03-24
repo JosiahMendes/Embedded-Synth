@@ -2358,39 +2358,11 @@ void sampleISR(){
   static int32_t phaseAcc_sel[n] = {0,0,0,0};
   static int32_t acc[n] = {0,0,0,0};
 
-  int32_t localCurrentStepSize[n];
-  // double localCurrentSineFactor2[n];
-  // int32_t localCurrentSineFactor[n];
-  int32_t localCurrentSineAcc[n];
-
-  for (int i=0; i<n; i++) {
-    localCurrentStepSize[i] = currentStepSize[i];
-    phaseAcc[i] += localCurrentStepSize[i];
-    //localCurrentSineFactor2[i] = currentSineFactor2[i];
-    localCurrentSineAcc[i] = currentSineAcc[i];
-  }
-
-  if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) { // Sawtooth
+  if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
+    int32_t localCurrentSineAcc[n];
     for (int i=0; i<n; i++) {
-      phaseAcc_sel[i] =  phaseAcc[i];
+      localCurrentSineAcc[i] = currentSineAcc[i];
     }
-  } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) { // Square: particularly problematic
-    for (int i=0; i<n; i++) {
-      if (phaseAcc[i] > half_max) {
-        phaseAcc_sel[i] = int32_max;
-      } else {
-        phaseAcc_sel[i] = 0;
-      }
-    }
-  } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) { // Triangular
-    for (int i=0; i<n; i++) {
-      if (phaseAcc[i]  > half_max) {
-        phaseAcc_sel[i]  = -3*int32_max + phaseAcc[i]*4;
-      } else {
-        phaseAcc_sel[i]  = int32_max - phaseAcc[i]*4;
-      }
-    }
-  } else if (knob0.get_rotation() == 6 || knob0.get_rotation() == 7) {
     for (int i=0; i<n; i++) {
       //phaseAcc_sel[i] = int32_max*sin(localCurrentSineFactor2[i]*phaseAcc[i]);
       //acc[i] += 512*localCurrentStepSize[i]/int32_max;
@@ -2399,6 +2371,33 @@ void sampleISR(){
         acc[i] = 0;
       }
       phaseAcc_sel[i]  = sine_lookup[acc[i]];
+    }
+  } else {
+    int32_t localCurrentStepSize[n];
+    for (int i=0; i<n; i++) {
+      localCurrentStepSize[i] = currentStepSize[i];
+      phaseAcc[i] += localCurrentStepSize[i];
+    }
+    if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) { // Sawtooth
+      for (int i=0; i<n; i++) {
+        phaseAcc_sel[i] =  phaseAcc[i];
+      }
+    } else if (knob0.get_rotation() == 2 || knob0.get_rotation() == 3) { // Square: particularly problematic
+      for (int i=0; i<n; i++) {
+        if (phaseAcc[i] > half_max) {
+          phaseAcc_sel[i] = int32_max;
+        } else {
+          phaseAcc_sel[i] = 0;
+        }
+      }
+    } else if (knob0.get_rotation() == 4 || knob0.get_rotation() == 5) { // Triangular
+      for (int i=0; i<n; i++) {
+        if (phaseAcc[i]  > half_max) {
+          phaseAcc_sel[i]  = -3*int32_max + phaseAcc[i]*4;
+        } else {
+          phaseAcc_sel[i]  = int32_max - phaseAcc[i]*4;
+        }
+      }
     }
   }
 
