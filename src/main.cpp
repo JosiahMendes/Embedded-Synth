@@ -32,7 +32,6 @@ const String noteNames [] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B
 volatile uint8_t keyArray[7];
 
 SemaphoreHandle_t keyArrayMutex;
-SemaphoreHandle_t stepSizeMutex;
 SemaphoreHandle_t keysPressedMutex;
 
 const int32_t int32_max = 2147483647;
@@ -151,15 +150,12 @@ void setStepSize(notes* note_list) {
         if (note_list[i] != None) {
           localCurrentStepSize = stepSizes[note_list[i]];
           localCurrentSineAcc = sine_acc[note_list[i]];
-          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-          currentStepSize[i] = localCurrentStepSize;
-          currentSineAcc[i] = localCurrentSineAcc;
-          xSemaphoreGive(stepSizeMutex);
+          __atomic_store(&currentStepSize[i], &localCurrentStepSize, __ATOMIC_RELAXED);
+          __atomic_store(&currentSineAcc[i], &localCurrentSineAcc, __ATOMIC_RELAXED);
         } else {
-          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-          currentStepSize[i] = 0;
-          currentSineAcc[i] = 0;
-          xSemaphoreGive(stepSizeMutex);
+          int32_t resetter = 0;
+          __atomic_store(&currentStepSize[i], &resetter, __ATOMIC_RELAXED);
+          __atomic_store(&currentSineAcc[i], &resetter, __ATOMIC_RELAXED);
         }
       }
 }
@@ -453,15 +449,12 @@ void scanKeysTask(void * pvParameters) {
             uint8_t octave = current >> 8;
             localCurrentStepSize = stepSizes[note] >> (5-octave);
             localCurrentSineAcc = sine_acc[note] >> (5-octave);
-            xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-            currentStepSize[j] = localCurrentStepSize;
-            currentSineAcc[j] = localCurrentSineAcc;
-            xSemaphoreGive(stepSizeMutex);
-          } else{
-            xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-              currentStepSize[j] = 0;
-              currentSineAcc[j] = 0;
-            xSemaphoreGive(stepSizeMutex);
+            __atomic_store(&currentStepSize[j], &localCurrentStepSize, __ATOMIC_RELAXED);
+            __atomic_store(&currentSineAcc[j], &localCurrentSineAcc, __ATOMIC_RELAXED);
+          } else {
+              int32_t resetter = 0;
+              __atomic_store(&currentStepSize[j], &resetter, __ATOMIC_RELAXED);
+              __atomic_store(&currentSineAcc[j], &resetter, __ATOMIC_RELAXED);
           }
       }
     }
@@ -651,7 +644,7 @@ void sampleISR(){
   } else {
     int32_t localCurrentStepSize[n];
     for (int i=0; i<n; i++) {
-      localCurrentStepSize[i] = currentStepSize[i];
+      __atomic_load(&currentStepSize[i], &localCurrentStepSize[i], __ATOMIC_RELAXED);
       phaseAcc[i] += localCurrentStepSize[i];
     }
     if (knob0.get_rotation() == 0 || knob0.get_rotation() == 1) { // Sawtooth
@@ -761,7 +754,6 @@ void setup() {
 
   //Initialise Semaphore
   keyArrayMutex = xSemaphoreCreateMutex();
-  stepSizeMutex = xSemaphoreCreateMutex();
   keysPressedMutex = xSemaphoreCreateMutex();
 
   CAN_Init(false);
