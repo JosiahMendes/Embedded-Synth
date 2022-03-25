@@ -21,6 +21,7 @@ volatile uint8_t keyArray[7];
 
 SemaphoreHandle_t keyArrayMutex;
 SemaphoreHandle_t stepSizeMutex;
+SemaphoreHandle_t keysPressedMutex;
 
 const int32_t int32_max = 2147483647;
 const int32_t half_max = 1073741824;
@@ -38,7 +39,7 @@ bool only_module = false;
 bool position_set = false; // indicates whether position has been set
 uint8_t position = 6; // undefined
 uint8_t octave = 7; // some initial value
-uint8_t lowest_octave = 3; // position 0 will have this octave
+#define lowest_octave  3; // position 0 will have this octave
 
 // CAN communication variables
 uint8_t TX_Message[8] = {0};
@@ -215,65 +216,184 @@ void compareKeyArray(uint8_t oldKeyArray[3], uint8_t newKeyArray[3]) {
   uint8_t newEG = newKeyArray[1];
   uint8_t newGsB = newKeyArray[2];
   TX_Message[1] = octave;
+
+  /*  case 'P': {
+        uint16_t value  = local_RX_Message[1] << 8 | local_RX_Message[2];
+        keysPressed.push_back(value);
+        break;
+      }
+      case 'R': {
+        uint16_t value  = local_RX_Message[1] << 8 | local_RX_Message[2];
+        keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+        break;
+      }*/
   if ( (~oldCDs >> 0) & B1 ^ (~newCDs >> 0) & B1 ) { // C changed
     TX_Message[0] = ((~oldCDs >> 0) & B1) ? 'R' : 'P';
     TX_Message[2] = 0;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldCDs >> 0) & B1) {
+        keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldCDs >> 1) & B1 ^ (~newCDs >> 1) & B1) { // Cs changed
     TX_Message[0] = ((~oldCDs >> 1) & B1) ? 'R' : 'P';
     TX_Message[2] = 1;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldCDs >> 1) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldCDs >> 2) & B1 ^ (~newCDs >> 2) & B1) { // D changed
     TX_Message[0] = ((~oldCDs >> 2) & B1) ? 'R' : 'P';
     TX_Message[2] = 2;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldCDs >> 2) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldCDs >> 3) & B1 ^ (~newCDs >> 3) & B1) { // Ds changed
     TX_Message[0] = ((~oldCDs >> 3) & B1) ? 'R' : 'P';
     TX_Message[2] = 3;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldCDs >> 3) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldEG  >> 0) & B1 ^ (~newEG >> 0) & B1) { // E changed
     TX_Message[0] = ((~oldEG >> 0) & B1) ? 'R' : 'P';
     TX_Message[2] = 4;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldEG >> 0) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldEG  >> 1) & B1 ^ (~newEG >> 1) & B1) { // F changed
     TX_Message[0] = ((~oldEG >> 1) & B1) ? 'R' : 'P';
     TX_Message[2] = 5;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldEG >> 1) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldEG  >> 2) & B1 ^ (~newEG >> 2) & B1) { // Fs changed
     TX_Message[0] = ((~oldEG >> 2) & B1) ? 'R' : 'P';
     TX_Message[2] = 6;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldEG >> 2) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldEG  >> 3) & B1 ^ (~newEG >> 3) & B1) { // G changed
     TX_Message[0] = ((~oldEG >> 3) & B1) ? 'R' : 'P';
     TX_Message[2] = 7;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+   if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldEG >> 3) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldGsB >> 0) & B1 ^ (~newGsB >> 0) & B1) { // Gs changed
     TX_Message[0] = ((~oldGsB >> 0) & B1) ? 'R' : 'P';
     TX_Message[2] = 8;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldGsB >> 0) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldGsB >> 1) & B1 ^ (~newGsB >> 1) & B1) { // A changed
     TX_Message[0] = (~oldGsB >> 1) & B1 ? 'R' : 'P';
     TX_Message[2] = 9;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldGsB >> 1) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldGsB >> 2) & B1 ^ (~newGsB >> 2) & B1) { // As changed
     TX_Message[0] = ((~oldGsB >> 2) & B1) ? 'R' : 'P';
     TX_Message[2] = 10;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldGsB >> 2) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
   if((~oldGsB >> 3) & B1 ^ (~newGsB >> 3) & B1) { // B changed
     TX_Message[0] = (~oldGsB >> 3) & B1 ? 'R' : 'P';
     TX_Message[2] = 11;
-    xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+    if(!receiver) xQueueSend(msgOutQ, TX_Message, portMAX_DELAY); else {
+      uint16_t value  =  TX_Message[1] << 8 | TX_Message[2];
+      xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+      if ((~oldGsB >> 3) & B1) {
+         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+      } else {
+        keysPressed.push_back(value);
+      }
+      xSemaphoreGive(keysPressedMutex);
+    };
   }
 }
 
@@ -302,9 +422,37 @@ void scanKeysTask(void * pvParameters) {
         xSemaphoreGive(keyArrayMutex);
     }
 
-    compareKeyArray(old_keyArray, local_keyArray);
+     if (!only_module) compareKeyArray(old_keyArray, local_keyArray);
+
+    if(!only_module & receiver){
+    int32_t localCurrentStepSize;
+    int32_t localCurrentSineAcc;
+      for (int j = 0; j < n; j++) {
+          xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+          int keysPressedSize = keysPressed.size();
+          xSemaphoreGive(keysPressedMutex);
+          if(keysPressedSize > j) {
+            xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
+            uint16_t current = keysPressed[j];
+            xSemaphoreGive(keysPressedMutex);
+            uint8_t note = current & 0xff;
+            uint8_t octave = current >> 8;
+            localCurrentStepSize = stepSizes[note] >> (5-octave);
+            localCurrentSineAcc = sine_acc[note] >> (5-octave);
+            xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+            currentStepSize[j] = localCurrentStepSize;
+            currentSineAcc[j] = localCurrentSineAcc;
+            xSemaphoreGive(stepSizeMutex);
+          } else{
+            xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+              currentStepSize[j] = 0;
+              currentSineAcc[j] = 0;
+            xSemaphoreGive(stepSizeMutex);
+          }
+      }
+    }
     // // Call function for setting stepsize
-    // findKeywithFunc(&setStepSize);
+    if(only_module) findKeywithFunc(&setStepSize);
 
     // Find rotation of knob, protected with a key array mutex?
     xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
@@ -320,6 +468,68 @@ void scanKeysTask(void * pvParameters) {
   }
 }
 
+void turnoffEast() {
+  digitalWrite(OUT_PIN, LOW);
+  setRow(6);
+  digitalWrite(REN_PIN,1);
+  delayMicroseconds(2);
+  readCols();
+  digitalWrite(REN_PIN,0);
+}
+
+void broadcastPosition() {
+  TX_Message[0] = 'H';
+  TX_Message[1] = 0;
+  TX_Message[2] = position;
+  xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+}
+
+void broadcastEndOfHandshake() {
+  if(position != 0) {
+    receiver = false;
+  }
+  octave = position + lowest_octave;
+  TX_Message[0] = 'E';
+  xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
+}
+
+void initialCheck() {
+  digitalWrite(OUT_PIN,1);
+  for(int i = 5; i <= 6; i++) {
+    setRow(i);
+    digitalWrite(REN_PIN,1);
+    delayMicroseconds(2);
+    keyArray[i] = readCols();
+    digitalWrite(REN_PIN,0);
+  }
+  if((keyArray[5] >> 3) & B1) { // west not connected
+    position = 0;
+    position_set = true;
+    if((keyArray[6] >> 3) & B1) {
+      //CAN_Init(true);
+      only_module = true;
+    } else {
+      only_module = false;
+    }
+  }
+}
+
+void initialHandshake() {
+  // uint32_t id = HAL_GetUIDw0(); // unique id
+  // std::hash<uint32_t> myHash;
+  // id_hash = myHash(id);
+  if(position_set) { // left most
+    if((keyArray[6] >> 3) & B1) { // the only module
+      octave = position + lowest_octave;
+      // end of handshake
+    }
+    else {
+      turnoffEast();
+      broadcastPosition();
+    }
+  }
+}
+
 void decodeTask(void * pvParameters) {
   uint8_t local_RX_Message[8] = {0};
 
@@ -332,33 +542,49 @@ void decodeTask(void * pvParameters) {
     switch(local_RX_Message[0]) {
       case 'P': {
         uint16_t value  = local_RX_Message[1] << 8 | local_RX_Message[2];
+        xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
         keysPressed.push_back(value);
+        xSemaphoreGive(keysPressedMutex);
         break;
       }
       case 'R': {
         uint16_t value  = local_RX_Message[1] << 8 | local_RX_Message[2];
+        xSemaphoreTake(keysPressedMutex, portMAX_DELAY);
         keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+        xSemaphoreGive(keysPressedMutex);
         break;
       }
-    }
-    int32_t localCurrentStepSize;
-    int32_t localCurrentSineAcc;
-    for (int j = 0; j < n; j++) {
-        if(keysPressed.size() > j) {
-          uint16_t current = keysPressed[j];
-          uint8_t note = current & 0xff;
-          uint8_t octave = current >> 8;
-          localCurrentStepSize = stepSizes[note];
-          localCurrentSineAcc = sine_acc[note];
-          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-          currentStepSize[j] = localCurrentStepSize;
-          currentSineAcc[j] = localCurrentSineAcc;
-          xSemaphoreGive(stepSizeMutex);
-        } else{
-          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-            currentStepSize[j] = 0;
-            currentSineAcc[j] = 0;
-          xSemaphoreGive(stepSizeMutex);
+      case 'H':{
+          setRow(5);
+          delayMicroseconds(2);
+          xSemaphoreTake(keyArrayMutex, portMAX_DELAY);
+          keyArray[5] = readCols();
+          if(keyArray[5] >> 3 & B1) { // west turned off
+            if(!position_set) {
+              position = RX_Message[2] + 1;
+              position_set = true;
+            }
+            if(keyArray[6] >> 3 & B1) { // check if east turned off
+              broadcastEndOfHandshake();
+            }
+            else {
+              turnoffEast();
+              broadcastPosition();
+            }
+          }
+          xSemaphoreGive(keyArrayMutex);
+          break;
+        }
+      case 'E':
+        {
+          if(position == 0) {
+            receiver = true;
+          }
+          else {
+            receiver = false;
+          }
+          octave = position + lowest_octave;
+          break;
         }
     }
   }
@@ -516,12 +742,13 @@ void setup() {
   //Initialise Semaphore
   keyArrayMutex = xSemaphoreCreateMutex();
   stepSizeMutex = xSemaphoreCreateMutex();
+  keysPressedMutex = xSemaphoreCreateMutex();
 
-  CAN_Init(true);
+  CAN_Init(false);
   setCANFilter(0x123,0x7ff);
   CAN_RegisterRX_ISR(CAN_RX_ISR);
   CAN_RegisterTX_ISR(CAN_TX_ISR);
-  CAN_Start();
+
   //Initialise queue handler
   msgInQ = xQueueCreate(128, 8);
   msgOutQ = xQueueCreate(72, 8);
@@ -572,6 +799,23 @@ void setup() {
     1,            /* Task priority */
     &transmitHandle /* Pointer to store the task handle */
   );
+
+  //Initialise handshake: setting west and east out high
+  digitalWrite(OUT_PIN, HIGH);
+  for(int i = 5; i <= 6; i++) {
+    setRow(i);
+    digitalWrite(REN_PIN,1);
+    delayMicroseconds(2);
+    readCols();
+    digitalWrite(REN_PIN,0);
+  }
+
+  delayMicroseconds(1000000); // wait 1 sec
+  initialCheck();
+  CAN_Start(); // start here as CAN_Init value can change inside initialCheck()
+  delayMicroseconds(1000000); // wait 1 sec
+  initialHandshake();
+
 
   vTaskStartScheduler();
 
