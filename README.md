@@ -65,7 +65,9 @@ As the tasks blocking dependencies can vary based on the number of keyboards, th
 Blue arrows represent data flow referring to differences that influence the execution time which are non-blocking. Red arrows are blocking true dependencies that mean the task will wait for the data to be available. Dotted arrows means that in the current configuration, there is no data flow between the tasks.
 
 ![IndivPiano](docsFigures/IndivPiano.png)
+
 ![RX_Piano](docsFigures/RXPiano.png)
+
 ![TX_Piano](docsFigures/TXPiano.png)
 
 ## Rate Monotonic Scheduler Critical Instant Analysis
