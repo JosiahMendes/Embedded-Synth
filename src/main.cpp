@@ -361,11 +361,6 @@ void decodeTask(void * pvParameters) {
           xSemaphoreGive(stepSizeMutex);
         }
     }
-  //   for (int i = 0; i < keysPressed.size(); i++) {
-  //     std::string current = keysPressed[i];
-  //     int octave = current[1] - '0';
-  //     int note = current[0];
-  //   }
   }
 }
 
@@ -528,8 +523,8 @@ void setup() {
   CAN_RegisterTX_ISR(CAN_TX_ISR);
   CAN_Start();
   //Initialise queue handler
-  msgInQ = xQueueCreate(36, 8);
-  msgOutQ = xQueueCreate(36, 8);
+  msgInQ = xQueueCreate(128, 8);
+  msgOutQ = xQueueCreate(72, 8);
   RX_Message_Mutex = xSemaphoreCreateMutex();
   CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
 
