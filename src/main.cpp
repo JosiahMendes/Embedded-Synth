@@ -30,7 +30,7 @@ volatile int32_t currentStepSize[n];
 volatile int32_t currentSineAcc[n];
 
 // global variable that keeps track of which keys are currently pressed
-std::vector<std::string> keysPressed;
+std::vector<uint16_t> keysPressed;
 
 // global variable determining mode for multi-module CAN communication
 bool receiver = true;
@@ -108,7 +108,7 @@ void findKeywithFunc(void (*func)(notes*)) {
       bool A  = (~GsB >> 1) & B1;
       bool As = (~GsB >> 2) & B1;
       bool B  = (~GsB >> 3) & B1;
-      
+
 
       bool bool_array [] = {C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B};
       notes localNotesPressed [] = {None,None,None,None};
@@ -116,7 +116,7 @@ void findKeywithFunc(void (*func)(notes*)) {
       // Return an array of 2 notes
       bool current_key = false;
       notes current_note = None;
-      
+
       int j = 0;
       for (int i=0; i<12; i++) {
         current_key = bool_array[i];
@@ -174,6 +174,11 @@ void setNoteName(notes* note_list) {
 
       // Piano note
       u8g2.drawStr(72,10, keyString.c_str());
+      u8g2.setCursor(82,10);
+      xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
+      u8g2.print((char) RX_Message[0]);
+      u8g2.print((char) RX_Message[2], HEX);
+      xSemaphoreGive(RX_Message_Mutex);
 
       // Right hand knob
       u8g2.setCursor(2,20);
@@ -199,7 +204,7 @@ void setNoteName(notes* note_list) {
       u8g2.drawStr(72, 30,"-");
       u8g2.drawStr(107, 30,"Vol");
       // transfer internal memory to the display
-      u8g2.sendBuffer();          
+      u8g2.sendBuffer();
 }
 
 void compareKeyArray(uint8_t oldKeyArray[3], uint8_t newKeyArray[3]) {
@@ -210,62 +215,62 @@ void compareKeyArray(uint8_t oldKeyArray[3], uint8_t newKeyArray[3]) {
   uint8_t newEG = newKeyArray[1];
   uint8_t newGsB = newKeyArray[2];
   TX_Message[1] = octave;
-  if ( (~oldCDs >> 0) & B1 != (~newCDs >> 0) & B1 ) { // C changed
+  if ( (~oldCDs >> 0) & B1 ^ (~newCDs >> 0) & B1 ) { // C changed
     TX_Message[0] = ((~oldCDs >> 0) & B1) ? 'R' : 'P';
     TX_Message[2] = 0;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldCDs >> 1) & B1 != (~newCDs >> 1) & B1) { // Cs changed
+  if((~oldCDs >> 1) & B1 ^ (~newCDs >> 1) & B1) { // Cs changed
     TX_Message[0] = ((~oldCDs >> 1) & B1) ? 'R' : 'P';
     TX_Message[2] = 1;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldCDs >> 2) & B1 != (~newCDs >> 2) & B1) { // D changed
+  if((~oldCDs >> 2) & B1 ^ (~newCDs >> 2) & B1) { // D changed
     TX_Message[0] = ((~oldCDs >> 2) & B1) ? 'R' : 'P';
     TX_Message[2] = 2;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldCDs >> 3) & B1 != (~newCDs >> 3) & B1) { // Ds changed
+  if((~oldCDs >> 3) & B1 ^ (~newCDs >> 3) & B1) { // Ds changed
     TX_Message[0] = ((~oldCDs >> 3) & B1) ? 'R' : 'P';
     TX_Message[2] = 3;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldEG  >> 0) & B1 != (~newEG >> 0) & B1) { // E changed
+  if((~oldEG  >> 0) & B1 ^ (~newEG >> 0) & B1) { // E changed
     TX_Message[0] = ((~oldEG >> 0) & B1) ? 'R' : 'P';
     TX_Message[2] = 4;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldEG  >> 1) & B1 != (~newEG >> 1) & B1) { // F changed
+  if((~oldEG  >> 1) & B1 ^ (~newEG >> 1) & B1) { // F changed
     TX_Message[0] = ((~oldEG >> 1) & B1) ? 'R' : 'P';
     TX_Message[2] = 5;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldEG  >> 2) & B1 != (~newEG >> 2) & B1) { // Fs changed
+  if((~oldEG  >> 2) & B1 ^ (~newEG >> 2) & B1) { // Fs changed
     TX_Message[0] = ((~oldEG >> 2) & B1) ? 'R' : 'P';
     TX_Message[2] = 6;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldEG  >> 3) & B1 != (~newEG >> 3) & B1) { // G changed
+  if((~oldEG  >> 3) & B1 ^ (~newEG >> 3) & B1) { // G changed
     TX_Message[0] = ((~oldEG >> 3) & B1) ? 'R' : 'P';
     TX_Message[2] = 7;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldGsB >> 0) & B1 != (~newGsB >> 0) & B1) { // Gs changed
+  if((~oldGsB >> 0) & B1 ^ (~newGsB >> 0) & B1) { // Gs changed
     TX_Message[0] = ((~oldGsB >> 0) & B1) ? 'R' : 'P';
     TX_Message[2] = 8;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldGsB >> 1) & B1 != (~newGsB >> 1) & B1) { // A changed
+  if((~oldGsB >> 1) & B1 ^ (~newGsB >> 1) & B1) { // A changed
     TX_Message[0] = (~oldGsB >> 1) & B1 ? 'R' : 'P';
     TX_Message[2] = 9;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldGsB >> 2) & B1 != (~newGsB >> 2) & B1) { // As changed
+  if((~oldGsB >> 2) & B1 ^ (~newGsB >> 2) & B1) { // As changed
     TX_Message[0] = ((~oldGsB >> 2) & B1) ? 'R' : 'P';
     TX_Message[2] = 10;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
   }
-  if((~oldGsB >> 3) & B1 != (~newGsB >> 3) & B1) { // B changed
+  if((~oldGsB >> 3) & B1 ^ (~newGsB >> 3) & B1) { // B changed
     TX_Message[0] = (~oldGsB >> 3) & B1 ? 'R' : 'P';
     TX_Message[2] = 11;
     xQueueSend(msgOutQ, TX_Message, portMAX_DELAY);
@@ -288,7 +293,7 @@ void scanKeysTask(void * pvParameters) {
       keyArray[i] = readCols();
       xSemaphoreGive(keyArrayMutex);
     }
-    
+
     for (int i = 3; i < 7; i++) { //expanded to read row 3, which is for the right hand knob
         setRow(i);
         delayMicroseconds(2);
@@ -317,51 +322,50 @@ void scanKeysTask(void * pvParameters) {
 
 void decodeTask(void * pvParameters) {
   uint8_t local_RX_Message[8] = {0};
-  xQueueReceive(msgInQ, local_RX_Message, portMAX_DELAY);
-  xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
-  std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
-  xSemaphoreGive(RX_Message_Mutex);
-  
-  switch(RX_Message[0]) {
-    case 'P': {
-      std::string value ({char(RX_Message[1]), char(RX_Message[2])}, 2);
-      keysPressed.push_back(value);
-      break;
-    }
-    case 'R': {
-      std::string value ({char(RX_Message[1]), char(RX_Message[2])}, 2);
-      keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
-      break;
-    }
-  }
-  int32_t localCurrentStepSize;
-  int32_t localCurrentSineAcc;
-  for (int j = 0; j < n; j++) {
-      if(keysPressed.size() > 0) {
-        std::string current = keysPressed[j];
-        int octave = current[1] - '0';
-        int note = current[0];
-        localCurrentStepSize = stepSizes[note];
-        localCurrentSineAcc = sine_acc[note];
-        xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-        currentStepSize[j] = localCurrentStepSize;
-        currentSineAcc[j] = localCurrentSineAcc;
-        xSemaphoreGive(stepSizeMutex);
-      } else{
-        xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
-          currentStepSize[j] = 0;
-          currentSineAcc[j] = 0;
-        xSemaphoreGive(stepSizeMutex);
+
+  while(true){
+    xQueueReceive(msgInQ, local_RX_Message, portMAX_DELAY);
+    xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
+    std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
+    xSemaphoreGive(RX_Message_Mutex);
+
+    switch(local_RX_Message[0]) {
+      case 'P': {
+        uint16_t value  = local_RX_Message[1] << 8 | local_RX_Message[2];
+        keysPressed.push_back(value);
+        break;
       }
-  }
-  for (int i = 0; i < keysPressed.size(); i++) {
-    std::string current = keysPressed[i];
-    int octave = current[1] - '0';
-    int note = current[0];
-
-
-    
-
+      case 'R': {
+        uint16_t value  = local_RX_Message[1] << 8 | local_RX_Message[2];
+        keysPressed.erase(std::remove(keysPressed.begin(), keysPressed.end(), value), keysPressed.end());
+        break;
+      }
+    }
+    int32_t localCurrentStepSize;
+    int32_t localCurrentSineAcc;
+    for (int j = 0; j < n; j++) {
+        if(keysPressed.size() > j) {
+          uint16_t current = keysPressed[j];
+          uint8_t note = current & 0xff;
+          uint8_t octave = current >> 8;
+          localCurrentStepSize = stepSizes[note];
+          localCurrentSineAcc = sine_acc[note];
+          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+          currentStepSize[j] = localCurrentStepSize;
+          currentSineAcc[j] = localCurrentSineAcc;
+          xSemaphoreGive(stepSizeMutex);
+        } else{
+          xSemaphoreTake(stepSizeMutex, portMAX_DELAY);
+            currentStepSize[j] = 0;
+            currentSineAcc[j] = 0;
+          xSemaphoreGive(stepSizeMutex);
+        }
+    }
+  //   for (int i = 0; i < keysPressed.size(); i++) {
+  //     std::string current = keysPressed[i];
+  //     int octave = current[1] - '0';
+  //     int note = current[0];
+  //   }
   }
 }
 
@@ -522,7 +526,7 @@ void setup() {
   setCANFilter(0x123,0x7ff);
   CAN_RegisterRX_ISR(CAN_RX_ISR);
   CAN_RegisterTX_ISR(CAN_TX_ISR);
-
+  CAN_Start();
   //Initialise queue handler
   msgInQ = xQueueCreate(36, 8);
   msgOutQ = xQueueCreate(36, 8);
@@ -534,7 +538,7 @@ void setup() {
   xTaskCreate(
     scanKeysTask,/* Function that implements the task */
     "scanKeys",/* Text name for the task */
-    512,
+    256,
     // 64,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
@@ -546,18 +550,29 @@ void setup() {
   xTaskCreate(
     displayUpdateTask,/* Function that implements the task */
     "displayUpdate",/* Text name for the task */
-    512,      /* Stack size in words, not bytes*/
+    256,      /* Stack size in words, not bytes*/
     NULL,/* Parameter passed into the task */
     1,/* Task priority*/
     &displayHandle
   );  /* Pointer to store the task handle*/
+
+  //Initialise Decode loop
+  TaskHandle_t decodeHandle = NULL;
+  xTaskCreate(
+    decodeTask,   /* Function that implements the task */
+    "decode",     /* Text name for the task */
+    512,          /* Stack size in words, not bytes */
+    NULL,         /* Parameter passed into the task */
+    1,            /* Task priority */
+    &decodeHandle /* Pointer to store the task handle */
+  );
 
   //Initialise transmit thread
   TaskHandle_t transmitHandle = NULL;
   xTaskCreate(
     CAN_TX_Task,   /* Function that implements the task */
     "transmit",     /* Text name for the task */
-    256,          /* Stack size in words, not bytes */
+    64,          /* Stack size in words, not bytes */
     NULL,         /* Parameter passed into the task */
     1,            /* Task priority */
     &transmitHandle /* Pointer to store the task handle */
