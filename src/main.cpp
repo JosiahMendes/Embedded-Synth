@@ -57,7 +57,6 @@ uint8_t TX_Message[8] = {0};
 uint8_t RX_Message[8] = {0};
 
 // global handle for a FreeRTOS mutex
-SemaphoreHandle_t RX_Message_Mutex;
 SemaphoreHandle_t CAN_TX_Semaphore;
 
 // queue handler
@@ -184,10 +183,6 @@ void setNoteName(notes* note_list) {
       // Piano note
       u8g2.drawStr(72,10, keyString.c_str());
       u8g2.setCursor(82,10);
-      xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
-      u8g2.print((char) RX_Message[0]);
-      u8g2.print((char) RX_Message[2], HEX);
-      xSemaphoreGive(RX_Message_Mutex);
 
       // Right hand knob
       u8g2.setCursor(2,20);
@@ -542,9 +537,7 @@ void decodeTask(void * pvParameters) {
 
   while(true){
     xQueueReceive(msgInQ, local_RX_Message, portMAX_DELAY);
-    xSemaphoreTake(RX_Message_Mutex, portMAX_DELAY);
     std::copy(std::begin(local_RX_Message), std::end(local_RX_Message), std::begin(RX_Message));
-    xSemaphoreGive(RX_Message_Mutex);
 
     switch(local_RX_Message[0]) {
       case 'P': {
@@ -764,7 +757,6 @@ void setup() {
   //Initialise queue handler
   msgInQ = xQueueCreate(128, 8);
   msgOutQ = xQueueCreate(72, 8);
-  RX_Message_Mutex = xSemaphoreCreateMutex();
   CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
 
   //Initialise Keyscanning Loop
